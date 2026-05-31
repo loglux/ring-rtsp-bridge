@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ring RTSP Bridge — Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .tab-active { @apply border-b-2 border-indigo-500 text-indigo-600 font-semibold; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen" x-data="adminApp()" x-init="init()">
+
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b border-gray-200">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+          </svg>
+        </div>
+        <h1 class="text-lg font-bold text-gray-900">Ring RTSP Bridge</h1>
+      </div>
+      <!-- Service status pills -->
+      <div class="flex gap-2">
+        <template x-for="(svc, key) in services" :key="key">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+                :class="svc.status === 'running' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+            <span class="w-1.5 h-1.5 rounded-full"
+                  :class="svc.status === 'running' ? 'bg-green-500' : 'bg-red-500'"></span>
+            <span x-text="key"></span>
+          </span>
+        </template>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <div class="max-w-5xl mx-auto px-6 mt-6">
+    <div class="flex gap-6 border-b border-gray-200 mb-6">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button @click="activeTab = tab.id"
+                class="pb-3 text-sm text-gray-500 hover:text-gray-900 transition-colors"
+                :class="activeTab === tab.id ? 'border-b-2 border-indigo-500 text-indigo-600 font-semibold' : ''">
+          <span x-text="tab.label"></span>
+        </button>
+      </template>
+    </div>
+
+    <!-- ── Dashboard ───────────────────────────────────────────── -->
+    <div x-show="activeTab === 'dashboard'" x-cloak>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <!-- Camera stats -->
+        <template x-for="(cam, name) in cameraStats" :key="name">
+          <div class="bg-white rounded-xl border border-gray-200 p-5">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <p class="text-xs text-gray-500 uppercase tracking-wide">Camera</p>
+                <p class="text-base font-semibold text-gray-900 mt-0.5" x-text="name"></p>
+              </div>
+              <span class="w-2 h-2 rounded-full bg-green-400 mt-1.5"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p class="text-xl font-bold text-indigo-600" x-text="(cam.camera_fps || 0).toFixed(1)"></p>
+                <p class="text-xs text-gray-400">cam fps</p>
+              </div>
+              <div>
+                <p class="text-xl font-bold text-indigo-600" x-text="(cam.detection_fps || 0).toFixed(1)"></p>
+                <p class="text-xs text-gray-400">detect fps</p>
+              </div>
+              <div>
+                <p class="text-xl font-bold text-indigo-600" x-text="(cam.process_fps || 0).toFixed(1)"></p>
+                <p class="text-xs text-gray-400">process fps</p>
+              </div>
+            </div>
+          </div>
+        </template>
+        <!-- Detector -->
+        <template x-for="(det, name) in detectorStats" :key="name">
+          <div class="bg-white rounded-xl border border-gray-200 p-5">
+            <p class="text-xs text-gray-500 uppercase tracking-wide">Detector</p>
+            <p class="text-base font-semibold text-gray-900 mt-0.5" x-text="name"></p>
+            <p class="text-2xl font-bold text-indigo-600 mt-3" x-text="(det.inference_speed || 0).toFixed(0) + ' ms'"></p>
+            <p class="text-xs text-gray-400">inference / frame</p>
+          </div>
+        </template>
+      </div>
+
+      <!-- Service control -->
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-4">Services</h2>
+        <div class="divide-y divide-gray-100">
+          <template x-for="(svc, key) in services" :key="key">
+            <div class="flex items-center justify-between py-3">
+              <div class="flex items-center gap-3">
+                <span class="w-2 h-2 rounded-full"
+                      :class="svc.status === 'running' ? 'bg-green-400' : 'bg-red-400'"></span>
+                <span class="text-sm font-medium text-gray-800" x-text="key"></span>
+                <span class="text-xs text-gray-400" x-text="svc.status"></span>
+              </div>
+              <div class="flex gap-2">
+                <button @click="showLogs(key)"
+                        class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                  Logs
+                </button>
+                <button @click="restart(key)"
+                        :disabled="restarting === key"
+                        class="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                  <span x-show="restarting !== key">Restart</span>
+                  <span x-show="restarting === key">Restarting…</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Quick links -->
+      <div class="mt-4 flex gap-3">
+        <a href="http://{{ request.headers.get('host', '').split(':')[0] }}:5000" target="_blank"
+           class="inline-flex items-center gap-2 text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+          Open Frigate UI →
+        </a>
+        <a href="http://{{ request.headers.get('host', '').split(':')[0] }}:55123" target="_blank"
+           class="inline-flex items-center gap-2 text-sm px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+          Ring Auth →
+        </a>
+      </div>
+    </div>
+
+    <!-- ── Cameras ──────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'cameras'" x-cloak>
+      <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Active cameras</h2>
+        <p class="text-xs text-gray-400 mb-4">Cameras currently configured in Frigate</p>
+        <div class="space-y-2" x-show="activeCameras.length > 0">
+          <template x-for="cam in activeCameras" :key="cam">
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <span class="text-sm font-medium text-gray-800" x-text="cam"></span>
+              <button @click="removeCamera(cam)"
+                      class="text-xs px-3 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                Remove
+              </button>
+            </div>
+          </template>
+        </div>
+        <p x-show="activeCameras.length === 0" class="text-sm text-gray-400 italic">No cameras configured</p>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Discovered cameras</h2>
+        <p class="text-xs text-gray-400 mb-4">All cameras found by ring-mqtt. Add them to Frigate to start recording.</p>
+        <div class="space-y-2" x-show="discoveredCameras.length > 0">
+          <template x-for="id in discoveredCameras" :key="id">
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+              <span class="text-sm text-gray-500 font-mono flex-1" x-text="id"></span>
+              <input x-model="newCameraNames[id]" :placeholder="'name (e.g. front_door)'"
+                     class="text-sm px-3 py-1.5 border border-gray-200 rounded-lg w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <button @click="addCamera(id)"
+                      :disabled="!newCameraNames[id]"
+                      class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
+                Add to Frigate
+              </button>
+            </div>
+          </template>
+        </div>
+        <p x-show="discoveredCameras.length === 0" class="text-sm text-gray-400 italic">
+          No cameras discovered yet — wait for ring-mqtt to connect to Ring
+        </p>
+      </div>
+    </div>
+
+    <!-- ── Detection ───────────────────────────────────────────── -->
+    <div x-show="activeTab === 'detection'" x-cloak>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Objects to detect</h2>
+        <p class="text-xs text-gray-400 mb-5">Select which objects Frigate should identify. Unselected objects still trigger motion recording but won't be labelled.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <template x-for="obj in allObjects" :key="obj">
+            <label class="flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors"
+                   :class="trackedObjects.includes(obj) ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'">
+              <input type="checkbox" :value="obj" x-model="trackedObjects" class="w-4 h-4 text-indigo-600 rounded">
+              <span class="text-sm font-medium text-gray-700" x-text="obj"></span>
+            </label>
+          </template>
+        </div>
+        <button @click="saveDetection()"
+                :disabled="saving"
+                class="px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50">
+          <span x-show="!saving">Save & restart Frigate</span>
+          <span x-show="saving">Saving…</span>
+        </button>
+        <p x-show="saved === 'detection'" class="text-sm text-green-600 mt-2">Saved. Frigate is restarting.</p>
+      </div>
+    </div>
+
+    <!-- ── Retention ───────────────────────────────────────────── -->
+    <div x-show="activeTab === 'retention'" x-cloak>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Event retention</h2>
+        <p class="text-xs text-gray-400 mb-6">How long to keep recorded clips. Frigate auto-deletes older footage.</p>
+        <div class="space-y-6 mb-6">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Alerts (detected person/car/etc) —
+              <span class="text-indigo-600 font-bold" x-text="alertDays + ' days'"></span>
+            </label>
+            <input type="range" min="1" max="90" x-model="alertDays"
+                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+            <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 day</span><span>90 days</span></div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Detections (motion only) —
+              <span class="text-indigo-600 font-bold" x-text="detectionDays + ' days'"></span>
+            </label>
+            <input type="range" min="1" max="90" x-model="detectionDays"
+                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+            <div class="flex justify-between text-xs text-gray-400 mt-1"><span>1 day</span><span>90 days</span></div>
+          </div>
+        </div>
+        <button @click="saveRetention()"
+                :disabled="saving"
+                class="px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50">
+          <span x-show="!saving">Save & restart Frigate</span>
+          <span x-show="saving">Saving…</span>
+        </button>
+        <p x-show="saved === 'retention'" class="text-sm text-green-600 mt-2">Saved. Frigate is restarting.</p>
+      </div>
+    </div>
+
+    <!-- ── Credentials ─────────────────────────────────────────── -->
+    <div x-show="activeTab === 'credentials'" x-cloak>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">RTSP credentials</h2>
+        <p class="text-xs text-gray-400 mb-5">Credentials used by ring-mqtt to protect the RTSP stream. After saving, also update <code class="bg-gray-100 px-1 rounded">RING_RTSP_PASS</code> in <code class="bg-gray-100 px-1 rounded">.env</code> on the host and restart Frigate.</p>
+        <div class="space-y-4 mb-6 max-w-sm">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+            <input type="text" x-model="rtspUser"
+                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
+            <input type="password" x-model="rtspPass"
+                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+        </div>
+        <button @click="saveCredentials()"
+                :disabled="saving"
+                class="px-5 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50">
+          <span x-show="!saving">Save & restart ring-mqtt</span>
+          <span x-show="saving">Saving…</span>
+        </button>
+        <div x-show="saved === 'credentials'" class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p class="text-sm text-yellow-800 font-medium">Saved. ring-mqtt restarted.</p>
+          <p class="text-xs text-yellow-700 mt-1">Also update <code>RING_RTSP_PASS</code> in <code>.env</code> on the host and run <code>make frigate-config</code> to apply to Frigate.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Logs ─────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'logs'" x-cloak>
+      <div class="bg-white rounded-xl border border-gray-200 p-5">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex gap-2">
+            <template x-for="(_, key) in services" :key="key">
+              <button @click="logsService = key; fetchLogs()"
+                      class="text-xs px-3 py-1.5 rounded-lg transition-colors"
+                      :class="logsService === key ? 'bg-indigo-600 text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'">
+                <span x-text="key"></span>
+              </button>
+            </template>
+          </div>
+          <button @click="fetchLogs()" class="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">
+            Refresh
+          </button>
+        </div>
+        <pre class="bg-gray-900 text-gray-100 text-xs p-4 rounded-lg overflow-auto max-h-96 font-mono leading-relaxed whitespace-pre-wrap break-all"
+             x-text="logsContent || 'Loading…'"></pre>
+      </div>
+    </div>
+
+  </div><!-- /max-w-5xl -->
+
+  <script>
+  function adminApp() {
+    return {
+      activeTab: 'dashboard',
+      tabs: [
+        { id: 'dashboard',   label: 'Dashboard'   },
+        { id: 'cameras',     label: 'Cameras'     },
+        { id: 'detection',   label: 'Detection'   },
+        { id: 'retention',   label: 'Retention'   },
+        { id: 'credentials', label: 'Credentials' },
+        { id: 'logs',        label: 'Logs'        },
+      ],
+
+      // status
+      services: {{ statuses | tojson }},
+      cameraStats: {},
+      detectorStats: {},
+
+      // cameras
+      activeCameras: {{ (fcfg.cameras or {}).keys() | list | tojson }},
+      discoveredCameras: {{ disc | tojson }},
+      newCameraNames: {},
+
+      // detection
+      allObjects: {{ all_objects | tojson }},
+      trackedObjects: {{ (fcfg.get('objects', {}).get('track', [])) | tojson }},
+
+      // retention
+      alertDays: {{ (fcfg.get('record', {}).get('alerts', {}).get('retain', {}).get('days', 30)) }},
+      detectionDays: {{ (fcfg.get('record', {}).get('detections', {}).get('retain', {}).get('days', 14)) }},
+
+      // credentials
+      rtspUser: {{ (ring_cfg.get('livestream_user', 'stream_user')) | tojson }},
+      rtspPass: {{ (ring_cfg.get('livestream_pass', '')) | tojson }},
+
+      // logs
+      logsService: 'frigate',
+      logsContent: '',
+
+      // ui state
+      saving: false,
+      saved: null,
+      restarting: null,
+
+      async init() {
+        await this.refreshStatus();
+        setInterval(() => this.refreshStatus(), 10000);
+      },
+
+      async refreshStatus() {
+        try {
+          const r = await fetch('/api/status');
+          const d = await r.json();
+          this.services = d.services;
+          const cams = d.frigate_stats?.cameras || {};
+          const dets = d.frigate_stats?.detectors || {};
+          this.cameraStats = cams;
+          this.detectorStats = dets;
+        } catch {}
+      },
+
+      async restart(service) {
+        this.restarting = service;
+        try {
+          await fetch(`/api/restart/${service}`, { method: 'POST' });
+          await new Promise(r => setTimeout(r, 2000));
+          await this.refreshStatus();
+        } finally {
+          this.restarting = null;
+        }
+      },
+
+      async addCamera(id) {
+        const name = this.newCameraNames[id];
+        if (!name) return;
+        const fd = new FormData();
+        fd.append('camera_id', id);
+        fd.append('camera_name', name);
+        await fetch('/api/cameras/add', { method: 'POST', body: fd });
+        this.activeCameras.push(name);
+        delete this.newCameraNames[id];
+      },
+
+      async removeCamera(name) {
+        if (!confirm(`Remove camera "${name}" from Frigate?`)) return;
+        const fd = new FormData();
+        fd.append('camera_name', name);
+        await fetch('/api/cameras/remove', { method: 'POST', body: fd });
+        this.activeCameras = this.activeCameras.filter(c => c !== name);
+      },
+
+      async saveDetection() {
+        this.saving = true;
+        await fetch('/api/detection', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ objects: this.trackedObjects }),
+        });
+        this.saving = false;
+        this.saved = 'detection';
+        setTimeout(() => this.saved = null, 4000);
+      },
+
+      async saveRetention() {
+        this.saving = true;
+        await fetch('/api/retention', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alerts_days: this.alertDays, detections_days: this.detectionDays }),
+        });
+        this.saving = false;
+        this.saved = 'retention';
+        setTimeout(() => this.saved = null, 4000);
+      },
+
+      async saveCredentials() {
+        this.saving = true;
+        await fetch('/api/credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: this.rtspUser, pass: this.rtspPass }),
+        });
+        this.saving = false;
+        this.saved = 'credentials';
+      },
+
+      async showLogs(service) {
+        this.logsService = service;
+        this.activeTab = 'logs';
+        await this.fetchLogs();
+      },
+
+      async fetchLogs() {
+        this.logsContent = 'Loading…';
+        try {
+          const r = await fetch(`/api/logs/${this.logsService}?lines=80`);
+          const d = await r.json();
+          this.logsContent = d.logs;
+        } catch (e) {
+          this.logsContent = 'Error fetching logs';
+        }
+      },
+    }
+  }
+  </script>
+</body>
+</html>
