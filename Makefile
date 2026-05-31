@@ -1,7 +1,7 @@
 COMPOSE = docker compose -f docker-compose.yml --env-file .env
 
 .PHONY: up down restart logs status pull init \
-        frigate-up frigate-logs frigate-config \
+        admin-deploy frigate-up frigate-logs frigate-config \
         bridge-logs auth-ui frigate-ui lint check-env
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -48,9 +48,16 @@ init:
 	@echo "Frigate UI: http://$$(hostname -I | awk '{print $$1}'):5000/"
 	@echo "Ring auth:  http://$$(hostname -I | awk '{print $$1}'):55123/"
 
+# ── Admin deploy ──────────────────────────────────────────────────────────────
+
+# Rebuild admin image and recreate container (docker restart won't apply a new image).
+admin-deploy:
+	$(COMPOSE) up -d --build admin
+
 # ── Frigate config update ─────────────────────────────────────────────────────
 
 # Push updated frigate-config/config.yaml and restart Frigate.
+# docker restart is fine here — no image rebuild, just config change.
 frigate-config:
 	docker cp frigate-config/config.yaml ring-frigate:/config/config.yaml
 	docker restart ring-frigate
