@@ -1,0 +1,66 @@
+version: 0.17-0
+
+mqtt:
+  enabled: true
+  host: mosquitto
+  port: 1883
+
+detectors:
+  cpu1:
+    type: cpu
+    num_threads: 2
+
+objects:
+  track:
+    - person
+    - car
+    - dog
+    - cat
+    - bicycle
+    - motorcycle
+
+record:
+  enabled: true
+  alerts:
+    retain:
+      days: 30
+  detections:
+    retain:
+      days: 14
+
+snapshots:
+  enabled: true
+
+cameras:
+  ring_front:
+    ffmpeg:
+      inputs:
+        - path: rtsp://{FRIGATE_RTSP_USER}:{FRIGATE_RTSP_PASSWORD}@ring-mqtt:8554/{FRIGATE_CAMERA_ID}_live
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true
+      width: 640
+      height: 360
+      fps: 5
+    motion:
+      threshold: 25
+      contour_area: 100
+
+  # Additional IP cameras — add via admin panel or copy this block:
+  # cam2:
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://user:pass@192.168.1.x/stream
+  #         roles:
+  #           - detect
+  #           - record
+  #   detect:
+  #     enabled: true
+  #     width: 640
+  #     height: 360
+  #     fps: 5
+  #   motion:
+  #     threshold: 25
+  #     contour_area: 100
