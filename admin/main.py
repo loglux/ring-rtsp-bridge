@@ -151,6 +151,28 @@ async def api_status():
     return {"services": statuses, "frigate_stats": stats}
 
 
+# ── API: ring connection status ───────────────────────────────────────────────
+
+@app.get("/api/ring-status")
+async def api_ring_status():
+    """Check if ring-mqtt is connected to Ring API and has discovered cameras."""
+    svc = container_status(SERVICES["ring-mqtt"])
+    if svc["status"] != "running":
+        return {"connected": False, "cameras": 0, "status": svc["status"]}
+    cameras = discovered_cameras()
+    # If go2rtc.yaml has streams, ring-mqtt has authenticated and discovered devices
+    connected = len(cameras) > 0
+    # Also check logs for connection confirmation
+    if not connected:
+        try:
+            c = docker_client().containers.get(SERVICES["ring-mqtt"])
+            logs = c.logs(tail=50).decode("utf-8", errors="replace")
+            connected = "Successfully established connection to Ring API" in logs
+        except Exception:
+            pass
+    return {"connected": connected, "cameras": len(cameras), "status": svc["status"]}
+
+
 # ── API: camera live toggle ───────────────────────────────────────────────────
 
 def frigate_camera_state(camera: str) -> dict:

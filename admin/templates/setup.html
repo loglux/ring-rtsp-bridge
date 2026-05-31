@@ -7,21 +7,29 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      theme: { extend: { colors: { brand: { DEFAULT: '#6366f1', dark: '#4f46e5', light: '#e0e7ff' } } } }
+      theme: { extend: { colors: { brand: { DEFAULT: '#6366f1', dark: '#4f46e5' } } } }
     }
   </script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
   <style>
     [x-cloak]{display:none!important}
     body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(99,102,241,.4); }
+      70%  { box-shadow: 0 0 0 10px rgba(99,102,241,0); }
+      100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    }
+    .pulse { animation: pulse-ring 1.5s infinite; }
   </style>
 </head>
-<body class="bg-zinc-50 min-h-screen flex items-start justify-center pt-12 px-4"
+
+<body class="bg-zinc-50 min-h-screen flex items-start justify-center pt-10 px-4 pb-10"
       x-data="wizard()" x-init="init()">
+<div class="w-full max-w-lg">
 
-<div class="w-full max-w-xl">
-
-  <!-- Logo + title -->
+  <!-- Header -->
   <div class="text-center mb-8">
     <div class="w-12 h-12 rounded-2xl bg-brand flex items-center justify-center shadow-lg mx-auto mb-4">
       <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -29,187 +37,262 @@
       </svg>
     </div>
     <h1 class="text-2xl font-bold text-zinc-900">Ring Bridge Setup</h1>
-    <p class="text-sm text-zinc-500 mt-1">Let's configure your stack in a few steps</p>
+    <p class="text-sm text-zinc-500 mt-1">Configure everything in one place</p>
   </div>
 
-  <!-- Progress bar -->
-  <div class="flex items-center gap-2 mb-8">
-    <template x-for="(label, i) in steps" :key="i">
-      <div class="flex items-center gap-2 flex-1">
-        <div class="flex items-center gap-2 flex-1">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all"
+  <!-- Progress steps -->
+  <div class="flex items-center mb-8 px-2">
+    <template x-for="(s, i) in steps" :key="i">
+      <div class="flex items-center flex-1">
+        <div class="flex flex-col items-center flex-shrink-0">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300"
                :class="i < step ? 'bg-brand text-white'
-                     : i === step ? 'bg-brand text-white ring-4 ring-brand/20'
+                     : i === step ? 'bg-brand text-white pulse'
                      : 'bg-zinc-200 text-zinc-400'">
             <template x-if="i < step">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
               </svg>
             </template>
-            <template x-if="i >= step">
-              <span x-text="i + 1"></span>
-            </template>
+            <span x-show="i >= step" x-text="i + 1"></span>
           </div>
-          <span class="text-xs font-medium hidden sm:block"
-                :class="i <= step ? 'text-zinc-700' : 'text-zinc-400'"
-                x-text="label"></span>
+          <span class="text-[10px] mt-1 font-medium text-center leading-tight hidden sm:block w-14"
+                :class="i <= step ? 'text-zinc-600' : 'text-zinc-400'"
+                x-text="s.short"></span>
         </div>
         <div x-show="i < steps.length - 1"
-             class="h-px flex-1 transition-all"
+             class="h-0.5 flex-1 mx-1 transition-all duration-500"
              :class="i < step ? 'bg-brand' : 'bg-zinc-200'"></div>
       </div>
     </template>
   </div>
 
   <!-- Card -->
-  <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm p-7">
+  <div class="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
 
-    <!-- ── Step 0: Credentials ──────────────────────────────────── -->
-    <div x-show="step === 0" x-cloak>
-      <h2 class="text-lg font-bold mb-1">RTSP credentials</h2>
-      <p class="text-sm text-zinc-500 mb-6">Set a username and password for the Ring camera stream. Frigate will use these to connect.</p>
-      <div class="space-y-4">
+    <!-- Step header -->
+    <div class="px-7 pt-6 pb-4 border-b border-zinc-100">
+      <p class="text-xs font-semibold uppercase tracking-widest text-brand mb-0.5"
+         x-text="'Step ' + (step + 1) + ' of ' + steps.length"></p>
+      <h2 class="text-lg font-bold text-zinc-900" x-text="steps[step]?.title"></h2>
+      <p class="text-sm text-zinc-500 mt-0.5" x-text="steps[step]?.desc"></p>
+    </div>
+
+    <div class="px-7 py-6">
+
+      <!-- ═══ STEP 0: RTSP Credentials ════════════════════════════ -->
+      <div x-show="step === 0" x-cloak class="space-y-4">
+        <div class="bg-brand/5 border border-brand/20 rounded-xl p-3 text-xs text-zinc-600">
+          These credentials are <strong>internal to the stack</strong> — only ring-mqtt and Frigate use them. You don't need to remember the password; we can generate it for you.
+        </div>
         <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Username</label>
+          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Stream username</label>
           <input x-model="creds.user" type="text" placeholder="stream_user"
                  class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Password</label>
-          <div class="relative">
-            <input x-model="creds.pass" :type="showPass ? 'text' : 'password'" placeholder="choose a strong password"
-                   class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 pr-10">
-            <button @click="showPass=!showPass" type="button"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
-              <svg x-show="!showPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Stream password</label>
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input x-model="creds.pass" :type="showPass ? 'text' : 'password'"
+                     placeholder="Set manually or generate →"
+                     class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 pr-10 font-mono">
+              <button @click="showPass=!showPass" type="button"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors">
+                <svg x-show="!showPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                <svg x-show="showPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                </svg>
+              </button>
+            </div>
+            <button @click="generatePassword()" type="button"
+                    class="px-4 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium flex-shrink-0 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
               </svg>
-              <svg x-show="showPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
-              </svg>
+              Generate
             </button>
           </div>
+          <p x-show="creds.pass.length > 0 && creds.pass.length < 8"
+             class="text-xs text-amber-500 mt-1.5">Use at least 8 characters</p>
+          <p x-show="generated" class="text-xs text-emerald-600 mt-1.5">
+            ✓ Strong password generated — stored automatically in both ring-mqtt and Frigate
+          </p>
         </div>
       </div>
-      <p x-show="creds.pass && creds.pass.length < 8" class="text-xs text-amber-500 mt-2">
-        Password should be at least 8 characters
-      </p>
-    </div>
 
-    <!-- ── Step 1: Cameras ──────────────────────────────────────── -->
-    <div x-show="step === 1" x-cloak>
-      <h2 class="text-lg font-bold mb-1">Add cameras</h2>
-      <p class="text-sm text-zinc-500 mb-5">Add at least one camera to start recording. You can add more later.</p>
+      <!-- ═══ STEP 1: Ring Auth ════════════════════════════════════ -->
+      <div x-show="step === 1" x-cloak>
 
-      <!-- Added cameras list -->
-      <div x-show="cameras.length > 0" class="mb-5 space-y-2">
-        <template x-for="(cam, i) in cameras" :key="i">
-          <div class="flex items-center gap-3 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
-            <svg class="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-            </svg>
-            <span class="text-sm font-medium text-emerald-800 flex-1" x-text="cam.name"></span>
-            <span class="text-xs text-emerald-600 font-mono truncate max-w-[180px]" x-text="cam.url"></span>
-            <button @click="cameras.splice(i, 1)" class="text-emerald-400 hover:text-red-400 transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        <!-- Not connected yet -->
+        <div x-show="!ringConnected">
+          <div class="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl mb-5">
+            <div class="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0">
+              <svg class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
               </svg>
-            </button>
+            </div>
+            <div>
+              <p class="text-sm font-medium text-zinc-700">ring-mqtt: <span class="text-zinc-400" x-text="ringMqttStatus"></span></p>
+              <p class="text-xs text-zinc-400 mt-0.5">Waiting for Ring account connection</p>
+            </div>
           </div>
-        </template>
+
+          <p class="text-sm text-zinc-600 mb-4">
+            Click the button below to open the Ring authentication page. Log in with your Ring account and complete 2FA — then come back here.
+          </p>
+
+          <button @click="openRingAuth()"
+                  class="w-full flex items-center justify-center gap-2 py-3 bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors font-medium text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+            </svg>
+            Open Ring Authentication
+          </button>
+
+          <!-- Polling indicator -->
+          <div class="flex items-center gap-2 mt-4 text-xs text-zinc-400">
+            <svg class="w-3.5 h-3.5 spinner text-brand" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Checking connection every 3 seconds…
+          </div>
+        </div>
+
+        <!-- Connected! -->
+        <div x-show="ringConnected" x-cloak>
+          <div class="flex items-center gap-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl mb-5">
+            <div class="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-emerald-800">Connected to Ring!</p>
+              <p class="text-xs text-emerald-600 mt-0.5">
+                <span x-text="ringCameraCount"></span> camera<span x-show="ringCameraCount !== 1">s</span> discovered
+              </p>
+            </div>
+          </div>
+          <p class="text-sm text-zinc-500">ring-mqtt is authenticated and has discovered your Ring devices. Continue to add them to Frigate.</p>
+        </div>
       </div>
 
-      <!-- Tabs: Ring / RTSP -->
-      <div class="flex gap-1 p-1 bg-zinc-100 rounded-xl mb-4 w-fit">
-        <button @click="camTab='ring'"
-                class="px-4 py-1.5 text-sm font-medium rounded-lg transition-all"
-                :class="camTab==='ring' ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-700'">
-          Ring camera
-        </button>
-        <button @click="camTab='rtsp'"
-                class="px-4 py-1.5 text-sm font-medium rounded-lg transition-all"
-                :class="camTab==='rtsp' ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-700'">
-          IP camera (RTSP)
-        </button>
-      </div>
+      <!-- ═══ STEP 2: Cameras ══════════════════════════════════════ -->
+      <div x-show="step === 2" x-cloak>
 
-      <!-- Ring tab -->
-      <div x-show="camTab==='ring'">
-        <div x-show="discovered.length > 0" class="space-y-2">
-          <template x-for="id in discovered" :key="id">
-            <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
-              <span class="text-sm text-zinc-500 font-mono flex-1" x-text="id"></span>
-              <input x-model="ringNames[id]" placeholder="name, e.g. front_door"
-                     class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-40 focus:outline-none focus:ring-2 focus:ring-brand/30">
-              <button @click="addRingCamera(id)"
-                      :disabled="!ringNames[id]"
-                      class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
-                Add
+        <!-- Added list -->
+        <div x-show="cameras.length > 0" class="mb-4 space-y-2">
+          <template x-for="(cam, i) in cameras" :key="i">
+            <div class="flex items-center gap-3 px-3 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <svg class="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span class="text-sm font-medium text-emerald-800 flex-1" x-text="cam.name"></span>
+              <span class="text-xs text-emerald-600 font-mono truncate max-w-[160px]"
+                    x-text="cam.type === 'ring' ? 'Ring camera' : cam.url"></span>
+              <button @click="cameras.splice(i,1)"
+                      class="text-emerald-400 hover:text-red-400 transition-colors ml-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
               </button>
             </div>
           </template>
         </div>
-        <div x-show="discovered.length === 0" class="py-6 text-center">
-          <p class="text-sm text-zinc-400">No Ring cameras discovered yet.</p>
-          <p class="text-xs text-zinc-400 mt-1">Make sure ring-mqtt is running and connected to your Ring account.</p>
+
+        <!-- Source tabs -->
+        <div class="flex gap-1 p-1 bg-zinc-100 rounded-xl mb-4 w-fit">
+          <button @click="camTab='ring'"
+                  class="px-4 py-1.5 text-sm font-medium rounded-lg transition-all"
+                  :class="camTab==='ring' ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-700'">
+            Ring cameras
+          </button>
+          <button @click="camTab='rtsp'"
+                  class="px-4 py-1.5 text-sm font-medium rounded-lg transition-all"
+                  :class="camTab==='rtsp' ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-700'">
+            IP camera (RTSP)
+          </button>
         </div>
+
+        <!-- Ring tab -->
+        <div x-show="camTab==='ring'">
+          <div x-show="discovered.length > 0" class="space-y-2">
+            <template x-for="id in discovered" :key="id">
+              <div x-show="!cameras.find(c=>c.id===id)"
+                   class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+                <div class="w-2 h-2 rounded-full bg-brand flex-shrink-0"></div>
+                <span class="text-sm text-zinc-500 font-mono flex-1 truncate" x-text="id"></span>
+                <input x-model="ringNames[id]" placeholder="name (e.g. front_door)"
+                       @keyup.enter="addRingCamera(id)"
+                       class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-36 focus:outline-none focus:ring-2 focus:ring-brand/30">
+                <button @click="addRingCamera(id)" :disabled="!ringNames[id]"
+                        class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
+                  Add
+                </button>
+              </div>
+            </template>
+            <div x-show="discovered.every(id => cameras.find(c=>c.id===id))" class="text-sm text-emerald-600 text-center py-2">
+              ✓ All Ring cameras added
+            </div>
+          </div>
+          <div x-show="discovered.length === 0" class="py-5 text-center">
+            <p class="text-sm text-zinc-400">No Ring cameras found.</p>
+            <button @click="refreshDiscovered()" class="text-xs text-brand hover:underline mt-1">Refresh list</button>
+          </div>
+        </div>
+
+        <!-- RTSP tab -->
+        <div x-show="camTab==='rtsp'" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Camera name</label>
+            <input x-model="newCam.name" placeholder="e.g. backyard"
+                   class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-zinc-500 mb-1.5">RTSP URL</label>
+            <input x-model="newCam.url" placeholder="rtsp://user:pass@192.168.1.x/stream"
+                   class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand/30">
+          </div>
+          <button @click="addRtspCamera()" :disabled="!newCam.name || !newCam.url"
+                  class="w-full py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
+            Add camera
+          </button>
+        </div>
+
+        <p x-show="cameras.length === 0" class="text-xs text-amber-500 mt-4 text-center">
+          Add at least one camera to continue
+        </p>
       </div>
 
-      <!-- RTSP tab -->
-      <div x-show="camTab==='rtsp'" class="space-y-3">
-        <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Camera name</label>
-          <input x-model="newCam.name" placeholder="e.g. backyard"
-                 class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+      <!-- ═══ STEP 3: Detection ════════════════════════════════════ -->
+      <div x-show="step === 3" x-cloak>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <template x-for="obj in allObjects" :key="obj">
+            <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
+                   :class="objects.includes(obj)
+                     ? 'border-brand bg-brand/5 text-brand'
+                     : 'border-zinc-200 text-zinc-600 hover:border-zinc-300'">
+              <input type="checkbox" :value="obj" x-model="objects" class="w-4 h-4 accent-brand">
+              <span class="text-sm font-medium" x-text="obj"></span>
+            </label>
+          </template>
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">RTSP URL</label>
-          <input x-model="newCam.url" placeholder="rtsp://user:pass@192.168.1.x/stream"
-                 class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand/30">
-        </div>
-        <button @click="addRtspCamera()"
-                :disabled="!newCam.name || !newCam.url"
-                class="w-full py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
-          Add camera
-        </button>
+        <p x-show="objects.length === 0" class="text-xs text-amber-500 mt-3">Select at least one object</p>
       </div>
 
-      <p x-show="cameras.length === 0" class="text-xs text-amber-500 mt-4">
-        Add at least one camera to continue. You can always add more later in the admin panel.
-      </p>
-    </div>
-
-    <!-- ── Step 2: Detection ────────────────────────────────────── -->
-    <div x-show="step === 2" x-cloak>
-      <h2 class="text-lg font-bold mb-1">Object detection</h2>
-      <p class="text-sm text-zinc-500 mb-5">Choose which objects Frigate should identify. Detected objects are kept longer and marked as alerts.</p>
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <template x-for="obj in allObjects" :key="obj">
-          <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
-                 :class="objects.includes(obj)
-                   ? 'border-brand bg-brand/5 text-brand'
-                   : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'">
-            <input type="checkbox" :value="obj" x-model="objects" class="w-4 h-4 accent-brand">
-            <span class="text-sm font-medium" x-text="obj"></span>
-          </label>
-        </template>
-      </div>
-      <p x-show="objects.length === 0" class="text-xs text-amber-500 mt-3">Select at least one object.</p>
-    </div>
-
-    <!-- ── Step 3: Retention ────────────────────────────────────── -->
-    <div x-show="step === 3" x-cloak>
-      <h2 class="text-lg font-bold mb-1">Clip retention</h2>
-      <p class="text-sm text-zinc-500 mb-6">How long to keep recorded clips before Frigate auto-deletes them.</p>
-      <div class="space-y-7">
+      <!-- ═══ STEP 4: Retention ════════════════════════════════════ -->
+      <div x-show="step === 4" x-cloak class="space-y-7">
         <div>
           <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs">(person/car detected)</span></label>
+            <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs">(detected person/car/etc)</span></label>
             <span class="text-lg font-bold text-brand" x-text="alertDays + ' days'"></span>
           </div>
           <input type="range" min="1" max="90" x-model="alertDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1"><span>1 day</span><span>90 days</span></div>
+          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
         <div>
           <div class="flex justify-between items-baseline mb-2">
@@ -218,131 +301,272 @@
           </div>
           <input type="range" min="1" max="90" x-model="detectionDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1"><span>1 day</span><span>90 days</span></div>
+          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
       </div>
-    </div>
 
-    <!-- ── Step 4: Done ─────────────────────────────────────────── -->
-    <div x-show="step === 4" x-cloak class="text-center py-4">
-      <div x-show="!applying && !done">
-        <div class="w-14 h-14 rounded-full bg-brand/10 flex items-center justify-center mx-auto mb-4">
-          <svg class="w-8 h-8 text-brand" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      <!-- ═══ STEP 5: Review & Apply ═══════════════════════════════ -->
+      <div x-show="step === 5" x-cloak>
+
+        <!-- Summary -->
+        <div x-show="!applying && !done" class="space-y-2 mb-6">
+          <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+            <span class="text-xs font-semibold text-zinc-400 w-24 flex-shrink-0">RTSP user</span>
+            <span class="text-sm font-medium text-zinc-700" x-text="creds.user"></span>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+            <span class="text-xs font-semibold text-zinc-400 w-24 flex-shrink-0">Cameras</span>
+            <span class="text-sm font-medium text-zinc-700" x-text="cameras.map(c=>c.name).join(', ') || '—'"></span>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+            <span class="text-xs font-semibold text-zinc-400 w-24 flex-shrink-0">Detect</span>
+            <span class="text-sm font-medium text-zinc-700" x-text="objects.join(', ')"></span>
+          </div>
+          <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
+            <span class="text-xs font-semibold text-zinc-400 w-24 flex-shrink-0">Retention</span>
+            <span class="text-sm font-medium text-zinc-700"
+                  x-text="'Alerts ' + alertDays + 'd · Detections ' + detectionDays + 'd'"></span>
+          </div>
+        </div>
+
+        <!-- Applying -->
+        <div x-show="applying" class="py-6 text-center">
+          <svg class="w-10 h-10 spinner text-brand mx-auto mb-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
           </svg>
+          <p class="text-sm text-zinc-500" x-text="applyingStep"></p>
         </div>
-        <h2 class="text-lg font-bold mb-2">Ready to apply</h2>
-        <div class="text-sm text-zinc-500 space-y-1 mb-6 text-left bg-zinc-50 rounded-xl p-4">
-          <p>✓ RTSP user: <span class="font-medium text-zinc-700" x-text="creds.user"></span></p>
-          <p>✓ Cameras: <span class="font-medium text-zinc-700" x-text="cameras.map(c=>c.name).join(', ')"></span></p>
-          <p>✓ Detect: <span class="font-medium text-zinc-700" x-text="objects.join(', ')"></span></p>
-          <p>✓ Alerts kept <span class="font-medium text-zinc-700" x-text="alertDays + ' days'"></span>,
-             detections <span class="font-medium text-zinc-700" x-text="detectionDays + ' days'"></span></p>
-        </div>
-      </div>
-      <div x-show="applying" class="py-6">
-        <div class="w-10 h-10 border-4 border-brand/30 border-t-brand rounded-full animate-spin mx-auto mb-4"></div>
-        <p class="text-sm text-zinc-500" x-text="applyingStep"></p>
-      </div>
-      <div x-show="done" class="py-4">
-        <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
-          <svg class="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-          </svg>
-        </div>
-        <h2 class="text-lg font-bold text-zinc-900 mb-1">Stack configured!</h2>
-        <p class="text-sm text-zinc-500 mb-6">Frigate is restarting with your settings.</p>
-        <div class="flex gap-3 justify-center">
-          <a href="/" class="px-5 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium">
-            Go to Dashboard
-          </a>
-          <a href="http://{{ request.headers.get('host','').split(':')[0] }}:5000" target="_blank"
-             class="px-5 py-2.5 border border-zinc-200 text-zinc-700 text-sm rounded-xl hover:bg-zinc-50 transition-colors">
-            Open Frigate →
-          </a>
-        </div>
-      </div>
-    </div>
 
-    <!-- Navigation -->
-    <div x-show="!done" class="flex items-center justify-between mt-8 pt-5 border-t border-zinc-100">
-      <button x-show="step > 0 && step < 4" @click="step--"
-              class="px-4 py-2 text-sm text-zinc-500 hover:text-zinc-800 transition-colors">
-        ← Back
-      </button>
-      <div x-show="step === 0"></div>
+        <!-- Done -->
+        <div x-show="done" class="py-4 text-center">
+          <div class="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-bold text-zinc-900 mb-1">Stack configured!</h3>
+          <p class="text-sm text-zinc-500 mb-6">Frigate is restarting with your settings.</p>
+          <div class="flex gap-3 justify-center">
+            <a href="/" class="px-5 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium">
+              Go to Dashboard →
+            </a>
+            <a href="http://{{ request.headers.get('host','').split(':')[0] }}:5000" target="_blank"
+               class="px-5 py-2.5 border border-zinc-200 text-zinc-700 text-sm rounded-xl hover:bg-zinc-50 transition-colors">
+              Open Frigate ↗
+            </a>
+          </div>
+        </div>
+      </div>
 
-      <!-- Next / Apply -->
-      <button x-show="step < 3" @click="nextStep()"
-              :disabled="!canNext()"
-              class="ml-auto px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
-        Continue →
+    </div><!-- /px-7 py-6 -->
+
+    <!-- Footer navigation -->
+    <div x-show="!done" class="px-7 py-4 border-t border-zinc-100 flex items-center justify-between">
+      <button x-show="step > 0 && !applying"
+              @click="prevStep()"
+              class="text-sm text-zinc-500 hover:text-zinc-800 transition-colors flex items-center gap-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+        </svg>
+        Back
       </button>
-      <button x-show="step === 3" @click="step = 4"
-              class="ml-auto px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium">
-        Review →
-      </button>
-      <button x-show="step === 4 && !applying && !done" @click="applyAll()"
-              class="mx-auto px-8 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium">
-        Apply configuration
-      </button>
+      <div x-show="step === 0 || applying"></div>
+
+      <!-- Step-specific next buttons -->
+      <template x-if="!applying">
+        <div class="ml-auto">
+          <!-- Steps 0,3,4: simple Continue -->
+          <button x-show="[0,3,4].includes(step)"
+                  @click="nextStep()"
+                  :disabled="!canNext()"
+                  class="px-6 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
+            Continue →
+          </button>
+
+          <!-- Step 1: Ring auth — skip if already connected -->
+          <div x-show="step === 1" class="flex gap-3">
+            <button x-show="!ringConnected"
+                    @click="skipRingAuth()"
+                    class="px-4 py-2 border border-zinc-200 text-zinc-500 text-sm rounded-xl hover:bg-zinc-50 transition-colors">
+              Skip (no Ring camera)
+            </button>
+            <button @click="nextStep()"
+                    :disabled="!ringConnected && !ringSkipped"
+                    class="px-6 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
+              Continue →
+            </button>
+          </div>
+
+          <!-- Step 2: Cameras -->
+          <button x-show="step === 2"
+                  @click="nextStep()"
+                  :disabled="cameras.length === 0"
+                  class="px-6 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
+            Continue →
+          </button>
+
+          <!-- Step 5: Apply -->
+          <button x-show="step === 5 && !done"
+                  @click="applyAll()"
+                  class="px-8 py-2 bg-emerald-600 text-white text-sm rounded-xl hover:bg-emerald-700 transition-colors font-medium">
+            ✓ Apply configuration
+          </button>
+        </div>
+      </template>
     </div>
   </div>
 
-  <!-- Skip link -->
   <p class="text-center mt-4 text-xs text-zinc-400">
     Already configured? <a href="/" class="text-brand hover:underline">Go to admin panel</a>
   </p>
+
 </div>
 
 <script>
 function wizard() {
   return {
     step: 0,
-    steps: ['Credentials', 'Cameras', 'Detection', 'Retention'],
+    steps: [
+      { short: 'Credentials', title: 'RTSP credentials',         desc: 'Set a username and password to protect the Ring camera stream.' },
+      { short: 'Ring auth',   title: 'Connect Ring account',      desc: 'Authenticate with your Ring account so ring-mqtt can discover your cameras.' },
+      { short: 'Cameras',     title: 'Add cameras',               desc: 'Add Ring cameras and any IP cameras to Frigate.' },
+      { short: 'Detection',   title: 'Object detection',          desc: 'Choose which objects Frigate should identify.' },
+      { short: 'Retention',   title: 'Clip retention',            desc: 'How long to keep recorded clips before auto-delete.' },
+      { short: 'Apply',       title: 'Review & apply',            desc: 'Everything looks good? Apply the configuration.' },
+    ],
 
     // step 0
     creds: { user: {{ (ring_cfg.get('livestream_user','stream_user')) | tojson }}, pass: '' },
     showPass: false,
+    generated: false,
 
     // step 1
+    ringConnected: false,
+    ringSkipped: false,
+    ringMqttStatus: 'checking…',
+    ringCameraCount: 0,
+    ringPollTimer: null,
+
+    // step 2
     camTab: 'ring',
     discovered: {{ disc | tojson }},
     ringNames: {},
-    cameras: [],   // [{name, url, type}]
+    cameras: [],
     newCam: { name: '', url: '' },
 
-    // step 2
+    // step 3
     allObjects: ['person', 'car', 'dog', 'cat', 'bicycle', 'motorcycle', 'truck', 'bird'],
     objects: ['person', 'car', 'dog', 'cat', 'bicycle', 'motorcycle'],
 
-    // step 3
+    // step 4
     alertDays: 30,
     detectionDays: 14,
 
-    // step 4
+    // step 5
     applying: false,
     applyingStep: '',
     done: false,
 
-    init() {},
+    // ── init ────────────────────────────────────────────────────────
+    async init() {
+      this.generatePassword();   // auto-generate on load
+      await this.checkRingStatus();
+    },
 
+    generatePassword() {
+      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const arr = new Uint8Array(20);
+      crypto.getRandomValues(arr);
+      this.creds.pass = Array.from(arr, b => chars[b % chars.length]).join('');
+      this.showPass = true;
+      this.generated = true;
+    },
+
+    // ── navigation ──────────────────────────────────────────────────
     canNext() {
-      if (this.step === 0) return this.creds.user && this.creds.pass.length >= 1;
-      if (this.step === 1) return this.cameras.length > 0;
-      if (this.step === 2) return this.objects.length > 0;
+      if (this.step === 0) return this.creds.user.length > 0 && this.creds.pass.length >= 1;
+      if (this.step === 1) return this.ringConnected || this.ringSkipped;
+      if (this.step === 2) return this.cameras.length > 0;
+      if (this.step === 3) return this.objects.length > 0;
       return true;
     },
 
     nextStep() {
-      if (this.canNext()) this.step++;
+      if (!this.canNext()) return;
+      if (this.step === 1) {
+        // refresh discovered cameras before showing step 2
+        this.refreshDiscovered();
+      }
+      this.step++;
+      if (this.step === 1) this.startRingPoll();
+      else this.stopRingPoll();
     },
 
+    prevStep() {
+      this.step--;
+      if (this.step === 1) this.startRingPoll();
+      else this.stopRingPoll();
+    },
+
+    skipRingAuth() {
+      this.ringSkipped = true;
+      this.stopRingPoll();
+    },
+
+    // ── Ring auth polling ───────────────────────────────────────────
+    openRingAuth() {
+      const host = window.location.hostname;
+      window.open(`http://${host}:55123/`, 'ring-auth',
+        'width=700,height=600,menubar=no,toolbar=no,location=no');
+      this.startRingPoll();
+    },
+
+    startRingPoll() {
+      if (this.ringPollTimer) return;
+      this.ringPollTimer = setInterval(() => this.checkRingStatus(), 3000);
+    },
+
+    stopRingPoll() {
+      if (this.ringPollTimer) {
+        clearInterval(this.ringPollTimer);
+        this.ringPollTimer = null;
+      }
+    },
+
+    async checkRingStatus() {
+      try {
+        const r = await fetch('/api/ring-status');
+        const d = await r.json();
+        this.ringMqttStatus = d.status;
+        this.ringCameraCount = d.cameras;
+        if (d.connected && !this.ringConnected) {
+          this.ringConnected = true;
+          this.stopRingPoll();
+          // auto-advance after 1.5s so user sees the success state
+          if (this.step === 1) {
+            setTimeout(() => {
+              this.refreshDiscovered();
+              this.step = 2;
+            }, 1500);
+          }
+        }
+      } catch {}
+    },
+
+    async refreshDiscovered() {
+      try {
+        const r = await fetch('/api/cameras');
+        const d = await r.json();
+        this.discovered = d.discovered;
+      } catch {}
+    },
+
+    // ── camera management ───────────────────────────────────────────
     addRingCamera(id) {
       const name = this.ringNames[id];
       if (!name) return;
-      const url = `rtsp://{FRIGATE_RTSP_USER}:{FRIGATE_RTSP_PASSWORD}@ring-mqtt:8554/${id}_live`;
-      this.cameras.push({ name, url, type: 'ring', id });
+      this.cameras.push({ name, type: 'ring', id,
+        url: `rtsp://{FRIGATE_RTSP_USER}:{FRIGATE_RTSP_PASSWORD}@ring-mqtt:8554/${id}_live` });
       delete this.ringNames[id];
     },
 
@@ -352,47 +576,39 @@ function wizard() {
       this.newCam = { name: '', url: '' };
     },
 
+    // ── apply ────────────────────────────────────────────────────────
     async applyAll() {
       this.applying = true;
 
-      // 1. Save RTSP credentials
       this.applyingStep = 'Saving RTSP credentials…';
       await fetch('/api/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: this.creds.user, pass: this.creds.pass }),
       });
 
-      // 2. Add cameras to Frigate
       this.applyingStep = 'Adding cameras to Frigate…';
       for (const cam of this.cameras) {
         if (cam.type === 'ring') {
           const fd = new FormData();
-          fd.append('camera_id', cam.id);
-          fd.append('camera_name', cam.name);
+          fd.append('camera_id', cam.id); fd.append('camera_name', cam.name);
           await fetch('/api/cameras/add', { method: 'POST', body: fd });
         } else {
           await fetch('/api/cameras/add-rtsp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: cam.name, rtsp_url: cam.url }),
           });
         }
       }
 
-      // 3. Detection settings
       this.applyingStep = 'Saving detection settings…';
       await fetch('/api/detection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ global_objects: this.objects, per_camera: {} }),
       });
 
-      // 4. Retention
       this.applyingStep = 'Saving retention settings…';
       await fetch('/api/retention', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alerts_days: this.alertDays, detections_days: this.detectionDays }),
       });
 
