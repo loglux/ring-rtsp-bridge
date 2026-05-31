@@ -43,7 +43,7 @@ services:
     ports:
       - "5000:5000"
       - "8971:8971"
-    shm_size: "128m"
+    shm_size: "160m"
     tmpfs:
       - /tmp/cache
     volumes:

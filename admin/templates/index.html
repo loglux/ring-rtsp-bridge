@@ -139,26 +139,66 @@
         <p class="text-xs text-gray-400 mb-4">Cameras currently configured in Frigate</p>
         <div class="space-y-2" x-show="activeCameras.length > 0">
           <template x-for="cam in activeCameras" :key="cam">
-            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <span class="text-sm font-medium text-gray-800" x-text="cam"></span>
-              <button @click="removeCamera(cam)"
-                      class="text-xs px-3 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
-                Remove
-              </button>
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg" x-data="{ renaming: false, newName: cam }">
+              <!-- Normal view -->
+              <span x-show="!renaming" class="text-sm font-medium text-gray-800 flex-1" x-text="cam"></span>
+              <!-- Rename input -->
+              <input x-show="renaming" x-model="newName" @keyup.enter="renameCamera(cam, newName); renaming=false"
+                     @keyup.escape="renaming=false; newName=cam"
+                     class="text-sm px-2 py-1 border border-indigo-300 rounded-lg flex-1 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <div class="flex gap-2">
+                <button x-show="!renaming" @click="renaming=true; newName=cam"
+                        class="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
+                  Rename
+                </button>
+                <button x-show="renaming" @click="renameCamera(cam, newName); renaming=false"
+                        :disabled="!newName || newName === cam"
+                        class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40">
+                  Save
+                </button>
+                <button x-show="renaming" @click="renaming=false; newName=cam"
+                        class="text-xs px-3 py-1.5 border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-100">
+                  Cancel
+                </button>
+                <button x-show="!renaming" @click="removeCamera(cam)"
+                        class="text-xs px-3 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+                  Remove
+                </button>
+              </div>
             </div>
           </template>
         </div>
         <p x-show="activeCameras.length === 0" class="text-sm text-gray-400 italic">No cameras configured</p>
       </div>
 
+      <!-- Add by RTSP URL -->
+      <div class="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Add camera by RTSP URL</h2>
+        <p class="text-xs text-gray-400 mb-4">For any IP camera — Hikvision, Dahua, Reolink, etc.</p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input x-model="newRtspName" placeholder="Name (e.g. backyard)"
+                 class="text-sm px-3 py-2 border border-gray-200 rounded-lg w-40 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <input x-model="newRtspUrl" placeholder="rtsp://user:pass@192.168.1.x/stream"
+                 class="text-sm px-3 py-2 border border-gray-200 rounded-lg flex-1 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <button @click="addRtspCamera()"
+                  :disabled="!newRtspName || !newRtspUrl || addingRtsp"
+                  class="text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40 whitespace-nowrap">
+            <span x-show="!addingRtsp">Add camera</span>
+            <span x-show="addingRtsp">Adding…</span>
+          </button>
+        </div>
+        <p x-show="rtspError" class="text-sm text-red-500 mt-2" x-text="rtspError"></p>
+      </div>
+
+      <!-- Ring-mqtt discovered -->
       <div class="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 class="text-sm font-semibold text-gray-700 mb-1">Discovered cameras</h2>
-        <p class="text-xs text-gray-400 mb-4">All cameras found by ring-mqtt. Add them to Frigate to start recording.</p>
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Ring cameras (auto-discovered)</h2>
+        <p class="text-xs text-gray-400 mb-4">Cameras found by ring-mqtt. Add them to Frigate to start recording.</p>
         <div class="space-y-2" x-show="discoveredCameras.length > 0">
           <template x-for="id in discoveredCameras" :key="id">
             <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
               <span class="text-sm text-gray-500 font-mono flex-1" x-text="id"></span>
-              <input x-model="newCameraNames[id]" :placeholder="'name (e.g. front_door)'"
+              <input x-model="newCameraNames[id]" placeholder="name (e.g. front_door)"
                      class="text-sm px-3 py-1.5 border border-gray-200 rounded-lg w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
               <button @click="addCamera(id)"
                       :disabled="!newCameraNames[id]"
@@ -169,7 +209,7 @@
           </template>
         </div>
         <p x-show="discoveredCameras.length === 0" class="text-sm text-gray-400 italic">
-          No cameras discovered yet — wait for ring-mqtt to connect to Ring
+          No Ring cameras discovered — restart ring-mqtt to refresh
         </p>
       </div>
     </div>
@@ -348,6 +388,10 @@
       activeCameras: {{ (fcfg.cameras or {}).keys() | list | tojson }},
       discoveredCameras: {{ disc | tojson }},
       newCameraNames: {},
+      newRtspName: '',
+      newRtspUrl: '',
+      addingRtsp: false,
+      rtspError: '',
 
       // detection — global
       allObjects: {{ all_objects | tojson }},
@@ -413,6 +457,27 @@
         }
       },
 
+      async addRtspCamera() {
+        this.rtspError = '';
+        this.addingRtsp = true;
+        try {
+          const r = await fetch('/api/cameras/add-rtsp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: this.newRtspName, rtsp_url: this.newRtspUrl }),
+          });
+          const d = await r.json();
+          if (d.error) { this.rtspError = d.error; return; }
+          this.activeCameras.push(this.newRtspName);
+          this.newRtspName = '';
+          this.newRtspUrl = '';
+        } catch (e) {
+          this.rtspError = 'Request failed';
+        } finally {
+          this.addingRtsp = false;
+        }
+      },
+
       async addCamera(id) {
         const name = this.newCameraNames[id];
         if (!name) return;
@@ -422,6 +487,20 @@
         await fetch('/api/cameras/add', { method: 'POST', body: fd });
         this.activeCameras.push(name);
         delete this.newCameraNames[id];
+      },
+
+      async renameCamera(oldName, newName) {
+        if (!newName || newName === oldName) return;
+        const r = await fetch('/api/cameras/rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ old_name: oldName, new_name: newName }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const idx = this.activeCameras.indexOf(oldName);
+          if (idx !== -1) this.activeCameras[idx] = newName;
+        }
       },
 
       async removeCamera(name) {

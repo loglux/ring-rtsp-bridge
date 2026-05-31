@@ -188,6 +188,51 @@ async def api_add_camera(camera_id: str = Form(...), camera_name: str = Form(...
     return {"ok": True}
 
 
+@app.post("/api/cameras/add-rtsp")
+async def api_add_rtsp_camera(request: Request):
+    data = await request.json()
+    name = data.get("name", "").strip().replace(" ", "_")
+    rtsp_url = data.get("rtsp_url", "").strip()
+    if not name or not rtsp_url:
+        return JSONResponse({"error": "name and rtsp_url required"}, status_code=400)
+    fcfg = read_frigate_config()
+    cameras = fcfg.setdefault("cameras", {})
+    if name in cameras:
+        return JSONResponse({"error": f"Camera '{name}' already exists"}, status_code=400)
+    cameras[name] = {
+        "ffmpeg": {
+            "inputs": [{
+                "path": rtsp_url,
+                "roles": ["detect", "record"],
+            }]
+        },
+        "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
+        "motion": {"threshold": 25, "contour_area": 100},
+    }
+    write_frigate_config(fcfg)
+    restart_container("frigate")
+    return {"ok": True}
+
+
+@app.post("/api/cameras/rename")
+async def api_rename_camera(request: Request):
+    data = await request.json()
+    old_name = data.get("old_name", "").strip()
+    new_name = data.get("new_name", "").strip().replace(" ", "_")
+    if not old_name or not new_name:
+        return JSONResponse({"error": "old_name and new_name required"}, status_code=400)
+    fcfg = read_frigate_config()
+    cameras = fcfg.get("cameras", {})
+    if old_name not in cameras:
+        return JSONResponse({"error": f"Camera '{old_name}' not found"}, status_code=404)
+    if new_name in cameras:
+        return JSONResponse({"error": f"Camera '{new_name}' already exists"}, status_code=400)
+    cameras[new_name] = cameras.pop(old_name)
+    write_frigate_config(fcfg)
+    restart_container("frigate")
+    return {"ok": True}
+
+
 @app.post("/api/cameras/remove")
 async def api_remove_camera(camera_name: str = Form(...)):
     fcfg = read_frigate_config()
