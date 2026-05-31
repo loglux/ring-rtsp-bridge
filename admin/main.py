@@ -137,6 +137,45 @@ async def api_status():
     return {"services": statuses, "frigate_stats": stats}
 
 
+# ── API: camera live toggle ───────────────────────────────────────────────────
+
+def frigate_camera_state(camera: str) -> dict:
+    """Return {detect: bool, record: bool} for a camera from Frigate stats."""
+    try:
+        r = httpx.get(f"{FRIGATE_API}/api/config", timeout=3)
+        cfg = r.json()
+        cam_cfg = cfg.get("cameras", {}).get(camera, {})
+        return {
+            "detect": cam_cfg.get("detect", {}).get("enabled", True),
+            "record": cam_cfg.get("record", {}).get("enabled", True),
+        }
+    except Exception:
+        return {"detect": True, "record": True}
+
+
+@app.get("/api/camera/{camera}/state")
+async def api_camera_state(camera: str):
+    return frigate_camera_state(camera)
+
+
+@app.post("/api/camera/{camera}/live")
+async def api_camera_live(camera: str, request: Request):
+    data = await request.json()
+    enabled = bool(data.get("enabled", True))
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{FRIGATE_API}/api/{camera}/detect",
+            json={"enabled": enabled},
+            timeout=5,
+        )
+        await client.post(
+            f"{FRIGATE_API}/api/{camera}/recordings",
+            json={"enabled": enabled},
+            timeout=5,
+        )
+    return {"ok": True, "camera": camera, "enabled": enabled}
+
+
 # ── API: restart ──────────────────────────────────────────────────────────────
 
 @app.post("/api/restart/{service}")
