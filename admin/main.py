@@ -112,9 +112,12 @@ def restart_container(service_key: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    fcfg = read_frigate_config()
+    # redirect to setup wizard if no cameras configured
+    if not fcfg.get("cameras"):
+        return RedirectResponse("/setup", status_code=302)
     statuses = {k: container_status(v) for k, v in SERVICES.items()}
     stats = frigate_stats()
-    fcfg = read_frigate_config()
     ring_cfg = read_ring_config()
     disc = discovered_cameras()
     return templates.TemplateResponse("index.html", {
@@ -125,6 +128,17 @@ async def index(request: Request):
         "ring_cfg": ring_cfg,
         "disc": disc,
         "all_objects": ALL_OBJECTS,
+    })
+
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup(request: Request):
+    ring_cfg = read_ring_config()
+    disc = discovered_cameras()
+    return templates.TemplateResponse("setup.html", {
+        "request": request,
+        "ring_cfg": ring_cfg,
+        "disc": disc,
     })
 
 
