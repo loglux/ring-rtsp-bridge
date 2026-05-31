@@ -3,10 +3,19 @@ services:
     image: eclipse-mosquitto:2
     container_name: ring-rtsp-mosquitto
     restart: unless-stopped
+    # Config embedded in command — avoids bind mount issues on ASUSTOR
+    command:
+      - sh
+      - -c
+      - |
+        echo 'listener 1883' > /tmp/mq.conf
+        echo 'allow_anonymous true' >> /tmp/mq.conf
+        echo 'persistence true' >> /tmp/mq.conf
+        echo 'persistence_location /mosquitto/data/' >> /tmp/mq.conf
+        echo 'log_dest stdout' >> /tmp/mq.conf
+        exec mosquitto -c /tmp/mq.conf
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./mosquitto-data:/mosquitto/data
-      - ./mosquitto-log:/mosquitto/log
+      - mosquitto-data:/mosquitto/data
 
   ring-mqtt:
     image: tsightler/ring-mqtt
@@ -18,8 +27,40 @@ services:
       - "55123:55123"
       - "${RING_RTSP_PORT:-8554}:8554"
     volumes:
-      - ./ring-mqtt-data:/data
+      - ring-mqtt-data:/data
     logging:
       options:
         max-size: 10m
         max-file: "3"
+
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: ring-frigate
+    restart: unless-stopped
+    depends_on:
+      - ring-mqtt
+      - mosquitto
+    ports:
+      - "5000:5000"
+      - "8971:8971"
+    shm_size: "128m"
+    tmpfs:
+      - /tmp/cache
+    volumes:
+      - frigate-config:/config
+      - frigate-clips:/media/frigate
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - FRIGATE_RTSP_USER=${RING_RTSP_USER:-stream_user}
+      - FRIGATE_RTSP_PASSWORD=${RING_RTSP_PASS:-change_me}
+      - FRIGATE_CAMERA_ID=${RING_CAMERA_ID}
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  mosquitto-data:
+  ring-mqtt-data:
+  frigate-config:
+  frigate-clips:

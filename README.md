@@ -174,6 +174,93 @@ Suggested first changes:
 - keep `enable_modes` and `enable_panic` disabled unless you explicitly need alarm features
 - keep `location_ids` empty unless you want to limit the bridge to selected Ring locations
 
+## Motion recording with Frigate
+
+Frigate is an NVR container that connects to the ring-mqtt RTSP stream, records clips triggered by motion, and provides a web UI for browsing footage. It also runs AI object detection to label clips by type (person, car, dog, cat, bicycle, motorcycle).
+
+### How recording works
+
+- Motion detected → recording starts immediately
+- AI identifies an object (person/car/dog...) → event marked as **alert**, kept 30 days
+- Motion only, no identified object → event marked as **detection**, kept 14 days
+- Snapshots saved alongside every event
+
+### Volume layout
+
+All persistent data lives in Docker named volumes (not bind mounts). This works correctly regardless of where docker compose is run from.
+
+| Volume | Contents |
+|---|---|
+| `ring-rtsp-bridge_ring-mqtt-data` | Ring auth token, go2rtc config, runtime state |
+| `ring-rtsp-bridge_frigate-config` | Frigate config.yaml, database, model cache |
+| `ring-rtsp-bridge_frigate-clips` | Recorded video clips |
+| `ring-rtsp-bridge_mosquitto-data` | MQTT persistence |
+
+### Fresh deployment
+
+1. Copy and edit `.env`:
+
+   ```sh
+   cp .env.example .env
+   # set RING_RTSP_USER, RING_RTSP_PASS, RING_CAMERA_ID
+   ```
+
+2. Start everything and push configs into the volumes:
+
+   ```sh
+   make init
+   ```
+
+   `make init` starts all containers then uses `docker cp` to load ring-mqtt auth state and Frigate config into their volumes.
+
+3. Complete Ring auth if needed (first-ever run):
+
+   Open `http://<host>:55123/` and log in.
+
+4. Open Frigate:
+
+   ```
+   http://<host>:5000/
+   ```
+
+### Finding your camera ID
+
+After ring-mqtt connects, run:
+
+```sh
+docker exec ring-rtsp-bridge cat /data/go2rtc.yaml
+```
+
+The camera ID is the part before `_live` in the stream key. Set it as `RING_CAMERA_ID` in `.env`.
+
+### Pushing an updated Frigate config
+
+Edit `frigate-config/config.yaml` then:
+
+```sh
+docker cp frigate-config/config.yaml ring-frigate:/config/config.yaml
+docker restart ring-frigate
+```
+
+### Object detection
+
+The default model runs on CPU and detects: `person`, `car`, `dog`, `cat`, `bicycle`, `motorcycle`.
+
+Detection runs at 640×360 px, 5 fps — appropriate for 1–2 cameras on Intel hardware without a Coral TPU. To add a Coral USB Accelerator later, change `detectors.cpu1.type` to `edgetpu` in `frigate-config/config.yaml` and add the USB device passthrough to the frigate service in `docker-compose.yml`.
+
+### Event retention
+
+| Event type | Kept for |
+|---|---|
+| Alert (object detected) | 30 days |
+| Detection (motion only) | 14 days |
+
+Settings are in `frigate-config/config.yaml` under `record.alerts` and `record.detections`.
+
+### Camera name
+
+The camera is named `ring_front` in `frigate-config/config.yaml`. Rename it if needed — the name appears in the UI and affects how Frigate labels recordings.
+
 ## Notes
 
 - Continuous viewing is possible, but Ring cameras are cloud devices and long-running streams may increase battery use, heat, and side effects on Ring behavior.
@@ -195,10 +282,11 @@ That tradeoff is deliberate:
 Reasonable next steps for this repository:
 
 - add a small healthcheck wrapper
-- add `go2rtc` or `Frigate` example configs
 - add a helper script for first-time auth and startup
 - add a hardened Mosquitto config if external MQTT access is needed
 - add a backup/restore note for `ring-mqtt-data/`
+- add Coral TPU passthrough to Frigate for faster AI detection
+- add Frigate zones to limit detection to specific areas of the frame
 
 ## Sources
 
