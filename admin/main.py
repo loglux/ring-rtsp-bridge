@@ -202,9 +202,24 @@ async def api_remove_camera(camera_name: str = Form(...)):
 @app.post("/api/detection")
 async def api_save_detection(request: Request):
     data = await request.json()
-    objects = data.get("objects", [])
+    global_objects = data.get("global_objects", [])
+    per_camera = data.get("per_camera", {})  # {camera_name: [objects] or None}
+
     fcfg = read_frigate_config()
-    fcfg["objects"] = {"track": objects}
+    fcfg["objects"] = {"track": global_objects}
+
+    cameras = fcfg.get("cameras", {})
+    for cam_name, cam_cfg in cameras.items():
+        overrides = per_camera.get(cam_name)
+        if overrides is not None:
+            # explicit per-camera list — store only if different from global
+            if sorted(overrides) != sorted(global_objects):
+                cam_cfg.setdefault("objects", {})["track"] = overrides
+            else:
+                cam_cfg.pop("objects", None)   # same as global — no override needed
+        else:
+            cam_cfg.pop("objects", None)       # cleared
+
     write_frigate_config(fcfg)
     restart_container("frigate")
     return {"ok": True}
