@@ -1,295 +1,200 @@
 # Ring RTSP Bridge
 
-This repository uses a `ring-mqtt`-based Docker setup to expose Ring cameras as RTSP streams and local events.
+A self-managed Docker stack that exposes Ring cameras as RTSP streams, records motion clips with AI object detection, and provides a web admin panel.
 
-Important limitation:
-
-- this still does **not** make Ring local-only
-- Ring live video still comes through Ring's cloud
-- this only gives you a cleaner way to consume Ring streams from your own RTSP-compatible tools
+**Important limitation:** Ring cameras are cloud devices. Live video still routes through Ring's cloud — this stack gives you a cleaner local way to consume and record those streams.
 
 ## What you get
 
-- RTSP live streams for Ring cameras
-- optional RTSP authentication
-- a local Dockerized MQTT broker for `ring-mqtt`
-- persistent config/state under this project directory
+- RTSP live streams for Ring cameras (via `ring-mqtt` + `go2rtc`)
+- Any IP camera with an RTSP URL can be added alongside Ring cameras
+- Motion recording with AI object detection (Frigate NVR)
+- Web UI for browsing recorded clips and live streams (Frigate, port 5000)
+- Web admin panel for managing cameras, detection settings, retention, credentials (port 8085)
+- Local Mosquitto MQTT broker
 
-## Goal
+## Stack
 
-This project exists to make an existing Ring installation easier to use from a self-managed local stack.
+| Container | Image | Purpose | Port |
+|---|---|---|---|
+| `ring-rtsp-mosquitto` | `eclipse-mosquitto:2` | MQTT broker | — |
+| `ring-rtsp-bridge` | `tsightler/ring-mqtt` | Ring → RTSP bridge | 8554 (RTSP), 55123 (auth UI) |
+| `ring-frigate` | `ghcr.io/blakeblackshear/frigate:stable` | NVR, AI detection, clip storage | 5000 (UI) |
+| `ring-admin` | local build (`admin/`) | Admin panel | 8085 |
 
-Typical target integrations:
+All persistent data lives in Docker named volumes — no bind mounts for runtime state.
 
-- `Frigate`
-- `Home Assistant`
-- `go2rtc`
-- `ZoneMinder`
-- `VLC` or `ffplay` for direct testing
-
-This is a bridge project, not a full replacement for the Ring app or Ring cloud.
-
-## How it works
-
-At runtime the stack looks like this:
-
-1. `ring-mqtt` authenticates against Ring using your Ring account and 2FA.
-2. `ring-mqtt` discovers your Ring devices and exposes camera streams.
-3. `ring-mqtt` publishes RTSP streams on port `8554` by default.
-4. Your local tools connect to those RTSP URLs and handle viewing, recording, or automation.
-5. A local Mosquitto broker is included because `ring-mqtt` expects MQTT as part of its runtime model.
-
-Data flow in simple terms:
-
-`Ring cloud -> ring-mqtt -> local RTSP consumer`
-
-Important consequence:
-
-- the stream becomes easier to consume locally
-- the source is still Ring cloud, not direct camera-to-LAN streaming
-
-## Project layout
-
-- `docker-compose.yml`: recommended runtime
-- `mosquitto.conf`: local MQTT broker config
-- `ring-mqtt-config.example.json`: starter config for `ring-mqtt`
-- `ring-mqtt-data/config.json`: local runtime config copied from the example
-- `ring-mqtt-data/`: persistent runtime state, including Ring auth/session data
-- `mosquitto-data/`: local MQTT persistence
-- `mosquitto-log/`: local MQTT logs
+| Volume | Contents |
+|---|---|
+| `ring-rtsp-bridge_ring-mqtt-data` | Ring auth token, RTSP config |
+| `ring-rtsp-bridge_frigate-config` | Frigate config, database, model cache |
+| `ring-rtsp-bridge_frigate-clips` | Recorded video clips |
+| `ring-rtsp-bridge_mosquitto-data` | MQTT persistence |
 
 ## Prerequisites
 
-- Docker
-- Docker Compose
-- a Ring account with 2FA enabled
+- Docker + Docker Compose
+- `make`
+- A Ring account with 2FA enabled (for Ring cameras)
 
 ## Quick start
 
-### 1. Prepare the local files
-
-Create the runtime directory and copy the example config:
-
-```sh
-mkdir -p ring-mqtt-data
-cp ring-mqtt-config.example.json ring-mqtt-data/config.json
-```
-
-Optional: copy the env file if you want a non-default RTSP port.
+### 1. Configure `.env`
 
 ```sh
 cp .env.example .env
 ```
 
-### 2. Start the local MQTT broker
+Edit `.env`:
 
 ```sh
-docker compose up -d mosquitto
+RING_RTSP_PORT=8554
+RING_RTSP_USER=stream_user       # RTSP username for ring-mqtt streams
+RING_RTSP_PASS=your_password     # RTSP password — change from default
+RING_CAMERA_ID=your_camera_id    # find after first ring-mqtt run (see below)
 ```
 
-### 3. Start the bridge
+### 2. Start the stack
 
 ```sh
-docker compose up -d ring-mqtt
+make init
 ```
 
-### 4. Complete one-time Ring authentication
+`make init` starts all containers in order and pushes ring-mqtt and Frigate configs into their named volumes via `docker cp`.
 
-On first run, `ring-mqtt` exposes a local authentication UI on port `55123`.
+### 3. Complete Ring authentication (first run only)
 
-Open it from the host machine or your LAN and complete Ring login plus 2FA there. After successful login, `ring-mqtt` writes runtime state into `ring-mqtt-data/ring-state.json`.
+Open the ring-mqtt auth UI and log in with your Ring account + 2FA:
 
-If you do not need the auth UI after bootstrap, you can later remove the `55123:55123` port mapping from `docker-compose.yml`.
-
-### 5. Read the logs
-
-```sh
-docker compose logs -f ring-mqtt
+```
+http://<host>:55123/
 ```
 
+After login, ring-mqtt writes a refresh token to its volume and reconnects automatically on future restarts.
 
-## Standard console workflow
-
-These are the main commands you are likely to use:
-
-Start MQTT only:
-
-```sh
-docker compose up -d mosquitto
-```
-
-Start the bridge:
-
-```sh
-docker compose up -d ring-mqtt
-```
-
-Complete first-run auth:
-
-Open `http://<host>:55123/`
-
-Restart the bridge after config changes:
-
-```sh
-docker compose restart ring-mqtt
-```
-
-Stop the stack:
-
-```sh
-docker compose down
-```
-
-Inspect logs:
-
-```sh
-docker compose logs -f ring-mqtt
-docker compose logs -f mosquitto
-```
-
-## RTSP URLs
-
-`ring-mqtt` creates RTSP paths in this format:
-
-- live stream: `rtsp://<host>:8554/<camera_id>_live`
-- recorded event stream: `rtsp://<host>:8554/<camera_id>_event`
-
-If you set `livestream_user` and `livestream_pass` in `ring-mqtt-data/config.json`, most players will prompt for credentials, or you can embed them in the URL:
-
-```text
-rtsp://stream_user:stream_pass@<host>:8554/<camera_id>_live
-```
-
-## Recommended config changes
-
-Edit `ring-mqtt-data/config.json` after the first init if needed:
-
-- set `livestream_user` and `livestream_pass`
-- keep `enable_cameras` enabled
-- leave `mqtt_url` as `mqtt://mosquitto:1883` for this compose setup
-
-Suggested first changes:
-
-- replace the example RTSP username/password
-- keep `enable_modes` and `enable_panic` disabled unless you explicitly need alarm features
-- keep `location_ids` empty unless you want to limit the bridge to selected Ring locations
-
-## Motion recording with Frigate
-
-Frigate is an NVR container that connects to the ring-mqtt RTSP stream, records clips triggered by motion, and provides a web UI for browsing footage. It also runs AI object detection to label clips by type (person, car, dog, cat, bicycle, motorcycle).
-
-### How recording works
-
-- Motion detected → recording starts immediately
-- AI identifies an object (person/car/dog...) → event marked as **alert**, kept 30 days
-- Motion only, no identified object → event marked as **detection**, kept 14 days
-- Snapshots saved alongside every event
-
-### Volume layout
-
-All persistent data lives in Docker named volumes (not bind mounts). This works correctly regardless of where docker compose is run from.
-
-| Volume | Contents |
-|---|---|
-| `ring-rtsp-bridge_ring-mqtt-data` | Ring auth token, go2rtc config, runtime state |
-| `ring-rtsp-bridge_frigate-config` | Frigate config.yaml, database, model cache |
-| `ring-rtsp-bridge_frigate-clips` | Recorded video clips |
-| `ring-rtsp-bridge_mosquitto-data` | MQTT persistence |
-
-### Fresh deployment
-
-1. Copy and edit `.env`:
-
-   ```sh
-   cp .env.example .env
-   # set RING_RTSP_USER, RING_RTSP_PASS, RING_CAMERA_ID
-   ```
-
-2. Start everything and push configs into the volumes:
-
-   ```sh
-   make init
-   ```
-
-   `make init` starts all containers then uses `docker cp` to load ring-mqtt auth state and Frigate config into their volumes.
-
-3. Complete Ring auth if needed (first-ever run):
-
-   Open `http://<host>:55123/` and log in.
-
-4. Open Frigate:
-
-   ```
-   http://<host>:5000/
-   ```
-
-### Finding your camera ID
-
-After ring-mqtt connects, run:
+### 4. Find your Ring camera ID
 
 ```sh
 docker exec ring-rtsp-bridge cat /data/go2rtc.yaml
 ```
 
-The camera ID is the part before `_live` in the stream key. Set it as `RING_CAMERA_ID` in `.env`.
+The camera ID is the part before `_live` in each stream key (e.g. `5c475e578873`). Set it as `RING_CAMERA_ID` in `.env`, then run `make init` again or add the camera via the admin panel.
 
-### Pushing an updated Frigate config
+### 5. Open the UIs
+
+| UI | URL | Purpose |
+|---|---|---|
+| Admin panel | `http://<host>:8085/` | Manage cameras, detection, settings |
+| Frigate | `http://<host>:5000/` | View clips, live streams, timeline |
+| Ring auth | `http://<host>:55123/` | One-time Ring login |
+
+## Admin panel
+
+The admin panel (`admin/`) is a FastAPI + Tailwind web app for managing the stack without editing config files.
+
+**Dashboard** — live camera stats (fps, detection fps), service status, restart buttons, per-camera Live/Paused toggle
+
+**Cameras** — add cameras by RTSP URL (any IP camera) or from Ring auto-discovery; rename and remove cameras
+
+**Detection** — select which objects Frigate should identify (person, car, dog, cat, bicycle, motorcycle, truck, bird); per-camera overrides
+
+**Retention** — sliders for how long to keep alerts (default 30 days) and detections (default 14 days)
+
+**Credentials** — change ring-mqtt RTSP username and password
+
+**Logs** — live log tail for any service
+
+### Live toggle (Ring cameras)
+
+Ring cameras stream through the cloud — continuous connections increase battery use. The **Live / Paused** button on the Dashboard stops detection and recording for a camera without restarting Frigate.
+
+## Adding cameras
+
+### Any IP camera (Hikvision, Reolink, Dahua, etc.)
+
+Admin panel → **Cameras** → "Add camera — RTSP URL":
+
+- Enter a name (e.g. `backyard`)
+- Enter the RTSP URL (e.g. `rtsp://user:pass@192.168.1.x/stream`)
+- Click **Add camera** — Frigate restarts automatically
+
+### Ring cameras
+
+Ring cameras are auto-discovered by ring-mqtt when it connects to your Ring account. They appear in Admin → **Cameras** → "Ring cameras — auto-discovered". Enter a name and click **Add to Frigate**.
+
+If a new camera doesn't appear: restart ring-mqtt (Admin → Dashboard → Restart ring-mqtt) and wait ~30 seconds.
+
+## Makefile reference
+
+```sh
+make init            # First-run: start stack + push configs via docker cp
+make up              # Start all containers
+make down            # Stop all containers
+make status          # Show container status
+make pull            # Pull latest images
+
+make admin-deploy    # Rebuild admin image and recreate container
+make frigate-config  # Push frigate-config/config.yaml and restart Frigate
+
+make logs            # Tail all logs
+make frigate-logs    # Tail Frigate logs
+make bridge-logs     # Tail ring-mqtt logs
+
+make lint            # Validate docker-compose.yml and check required files
+make check-env       # Check .env for unchanged placeholder values
+
+make auth-ui         # Print Ring auth URL
+make frigate-ui      # Print Frigate UI URL
+```
+
+> **Note:** `docker restart` does not apply a newly built image. Always use `make admin-deploy` (or `docker compose up -d --build admin`) after editing admin code.
+
+## Updating Frigate config
 
 Edit `frigate-config/config.yaml` then:
 
 ```sh
-docker cp frigate-config/config.yaml ring-frigate:/config/config.yaml
-docker restart ring-frigate
+make frigate-config
 ```
 
-### Object detection
+This pushes the file into the Frigate volume and restarts the container.
 
-The default model runs on CPU and detects: `person`, `car`, `dog`, `cat`, `bicycle`, `motorcycle`.
+## RTSP URLs (ring-mqtt streams)
 
-Detection runs at 640×360 px, 5 fps — appropriate for 1–2 cameras on Intel hardware without a Coral TPU. To add a Coral USB Accelerator later, change `detectors.cpu1.type` to `edgetpu` in `frigate-config/config.yaml` and add the USB device passthrough to the frigate service in `docker-compose.yml`.
+Ring camera streams served by ring-mqtt:
 
-### Event retention
+```
+rtsp://<user>:<pass>@<host>:8554/<camera_id>_live
+rtsp://<user>:<pass>@<host>:8554/<camera_id>_event
+```
 
-| Event type | Kept for |
-|---|---|
-| Alert (object detected) | 30 days |
-| Detection (motion only) | 14 days |
+Credentials (`user`/`pass`) are set in Admin → Credentials (or directly in `ring-mqtt-data/config.json`).
 
-Settings are in `frigate-config/config.yaml` under `record.alerts` and `record.detections`.
+## How recording works
 
-### Camera name
+1. Frigate connects to camera RTSP streams
+2. Any pixel motion → recording segment written to `frigate-clips` volume
+3. AI model (CPU, MobileNet) runs at 5 fps on 640×360 frames
+4. Detected object → event marked as **alert** (default 30-day retention)
+5. Motion without identified object → **detection** (default 14-day retention)
 
-The camera is named `ring_front` in `frigate-config/config.yaml`. Rename it if needed — the name appears in the UI and affects how Frigate labels recordings.
+All settings adjustable from Admin → Detection and Admin → Retention.
 
 ## Notes
 
-- Continuous viewing is possible, but Ring cameras are cloud devices and long-running streams may increase battery use, heat, and side effects on Ring behavior.
-- This repository does not expose MQTT outside Docker by default. If you later want Home Assistant or another tool to consume MQTT directly, add a published port for Mosquitto and secure it properly.
-
-## Current design choice
-
-This repository is intentionally a self-managed integration project around `ring-mqtt`, not a custom implementation of the Ring streaming protocol.
-
-That tradeoff is deliberate:
-
-- less custom code to maintain
-- faster path to a usable RTSP bridge
-- better practical reliability than the old prototype
-- still flexible enough to add our own scripts, docs, wrappers, health checks, or deployment logic later
+- Ring cameras are cloud devices — continuous streaming may increase battery use and heat.
+- MQTT is not exposed outside Docker by default. To connect Home Assistant directly, add a Mosquitto port and secure it.
+- Frigate config is delivered via `docker cp` because named volumes are used (bind mounts from the host are unreliable in this deployment environment).
 
 ## Future directions
 
-Reasonable next steps for this repository:
-
-- add a small healthcheck wrapper
-- add a helper script for first-time auth and startup
-- add a hardened Mosquitto config if external MQTT access is needed
-- add a backup/restore note for `ring-mqtt-data/`
-- add Coral TPU passthrough to Frigate for faster AI detection
-- add Frigate zones to limit detection to specific areas of the frame
+- Frigate zones — limit detection to specific areas of the frame
+- Coral TPU passthrough for faster AI inference
+- Backup and restore guide for named volumes
+- Healthcheck endpoints for all services
 
 ## Sources
 
-- ring-mqtt overview: https://github.com/tsightler/ring-mqtt/wiki
-- Docker install: https://github.com/tsightler/ring-mqtt/wiki/Installation-%28Docker%29
-- video streaming details: https://github.com/tsightler/ring-mqtt/wiki/Video-Streaming
+- ring-mqtt: https://github.com/tsightler/ring-mqtt/wiki
+- Frigate: https://docs.frigate.video
+- go2rtc: https://github.com/AlexxIT/go2rtc
