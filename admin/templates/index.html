@@ -332,6 +332,39 @@
         No Ring cameras found — restart ring-mqtt to refresh
       </p>
     </div>
+
+    <!-- Storage cleanup -->
+    <div class="card p-5" x-data="{orphaned:{}, cleaning:false, done:null}"
+         x-init="fetch('/api/cleanup/preview').then(r=>r.json()).then(d=>orphaned=d.orphaned||{})">
+      <p class="section-title">Storage cleanup</p>
+      <p class="section-sub">Events that have preview snapshots but no video (e.g. due to a misconfiguration). Safe to remove.</p>
+
+      <div x-show="Object.keys(orphaned).length===0" class="text-sm text-zinc-400 italic">
+        No orphaned events found — storage is clean.
+      </div>
+
+      <div x-show="Object.keys(orphaned).length>0" class="space-y-2 mb-4">
+        <template x-for="[cam, count] in Object.entries(orphaned)" :key="cam">
+          <div class="flex items-center justify-between px-3 py-2.5 bg-red-50 rounded-xl">
+            <div class="flex items-center gap-2">
+              <span x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
+              <span class="text-sm font-medium" x-text="cam"></span>
+              <span class="text-xs text-red-500" x-text="count + ' orphaned'"></span>
+            </div>
+            <button @click="cleaning=cam; fetch('/api/cleanup/orphaned',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({camera:cam})}).then(r=>r.json()).then(d=>{done=d;delete orphaned[cam];cleaning=null})"
+                    :disabled="cleaning===cam"
+                    class="text-xs px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition-colors disabled:opacity-50">
+              <span x-show="cleaning!==cam">Clean up</span>
+              <span x-show="cleaning===cam">Cleaning…</span>
+            </button>
+          </div>
+        </template>
+      </div>
+
+      <div x-show="done" class="text-sm text-emerald-600 font-medium"
+           x-text="done ? '✓ Removed ' + done.cleaned_events + ' events, ' + done.deleted_files + ' files' : ''">
+      </div>
+    </div>
   </div>
 
   <!-- ══ DETECTION ══════════════════════════════════════════════════════ -->

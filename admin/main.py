@@ -455,6 +455,78 @@ async def api_save_credentials(request: Request):
     return {"ok": True, "note": "ring-mqtt restarted. Update RING_RTSP_PASS in .env and restart Frigate."}
 
 
+# ── API: storage cleanup ─────────────────────────────────────────────────────
+
+FRIGATE_DB_PATH = Path("/config/frigate.db")
+FRIGATE_CLIPS_PATH = Path("/media/frigate/clips")
+
+@app.get("/api/cleanup/preview")
+async def api_cleanup_preview():
+    """Return count of events that have no video clip on disk."""
+    import sqlite3, glob as _glob
+    try:
+        conn = sqlite3.connect(str(FRIGATE_DB_PATH))
+        c = conn.cursor()
+        c.execute("SELECT camera, COUNT(*) FROM event WHERE has_clip=1 GROUP BY camera")
+        rows = c.fetchall()
+        conn.close()
+        result = {}
+        for camera, total in rows:
+            orphaned = sum(
+                1 for row_id in _get_clip_ids(camera)
+                if not (FRIGATE_CLIPS_PATH / f"{row_id}.mp4").exists()
+            )
+            if orphaned:
+                result[camera] = orphaned
+        return {"orphaned": result}
+    except Exception as e:
+        return {"error": str(e)}
+
+def _get_clip_ids(camera: str) -> list[str]:
+    import sqlite3
+    try:
+        conn = sqlite3.connect(str(FRIGATE_DB_PATH))
+        c = conn.cursor()
+        c.execute("SELECT id FROM event WHERE camera=? AND has_clip=1", (camera,))
+        ids = [r[0] for r in c.fetchall()]
+        conn.close()
+        return ids
+    except Exception:
+        return []
+
+@app.post("/api/cleanup/orphaned")
+async def api_cleanup_orphaned(request: Request):
+    """Delete snapshot files for events that have no video clip."""
+    import sqlite3, glob as _glob
+    data   = await request.json()
+    camera = data.get("camera")  # optional: clean only this camera
+    try:
+        conn = sqlite3.connect(str(FRIGATE_DB_PATH))
+        c    = conn.cursor()
+        query = "SELECT id FROM event WHERE has_clip=1"
+        params: tuple = ()
+        if camera:
+            query += " AND camera=?"
+            params = (camera,)
+        c.execute(query, params)
+        event_ids = [r[0] for r in c.fetchall()]
+
+        deleted_files = 0
+        cleaned_events = 0
+        for eid in event_ids:
+            if not (FRIGATE_CLIPS_PATH / f"{eid}.mp4").exists():
+                for f in _glob.glob(str(FRIGATE_CLIPS_PATH / f"{eid}*")):
+                    Path(f).unlink(missing_ok=True)
+                    deleted_files += 1
+                c.execute("UPDATE event SET has_clip=0, has_snapshot=0 WHERE id=?", (eid,))
+                cleaned_events += 1
+        conn.commit()
+        conn.close()
+        return {"ok": True, "cleaned_events": cleaned_events, "deleted_files": deleted_files}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ── MQTT listener ─────────────────────────────────────────────────────────────
 # Battery cameras stay IN Frigate config permanently (removing them causes Frigate
 # to delete their recordings). On motion we toggle detect+record via Frigate API
