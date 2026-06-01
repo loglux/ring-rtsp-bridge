@@ -204,14 +204,16 @@ async def index(request: Request):
     stats    = frigate_stats()
     ring_cfg = read_ring_config()
     disc     = discovered_cameras()
+    frigate_url = f"http://{request.url.hostname}:5000"
     return templates.TemplateResponse(request, "index.html", {
-        "statuses":   statuses,
-        "stats":      stats,
-        "fcfg":       fcfg,
-        "cameras":    cameras,
-        "ring_cfg":   ring_cfg,
-        "disc":       disc,
+        "statuses":    statuses,
+        "stats":       stats,
+        "fcfg":        fcfg,
+        "cameras":     cameras,
+        "ring_cfg":    ring_cfg,
+        "disc":        disc,
         "all_objects": ALL_OBJECTS,
+        "frigate_url": frigate_url,
     })
 
 @app.get("/setup", response_class=HTMLResponse)
@@ -284,13 +286,20 @@ async def api_cameras():
     }
 
 
+_SAFE_ID = re.compile(r'^[A-Za-z0-9_-]+$')
+
 @app.post("/api/cameras/add")
 async def api_add_ring_camera(
     camera_id: str = Form(...),
     camera_name: str = Form(...),
     wired: str = Form("false"),
 ):
-    """Add a Ring camera. wired=true → _live stream (powered); default → _event (battery)."""
+    """Add a Ring camera. wired=true → _live stream (powered); default → battery."""
+    camera_name = camera_name.strip().replace(" ", "_")
+    if not _SAFE_ID.match(camera_id):
+        return JSONResponse({"error": "Invalid camera_id"}, status_code=400)
+    if not _SAFE_ID.match(camera_name):
+        return JSONResponse({"error": "Camera name may only contain letters, digits, _ and -"}, status_code=400)
     is_battery = wired.lower() not in ("true", "1", "yes")
     cfg = ring_camera_config(camera_id, battery=is_battery)
     meta = read_camera_meta()

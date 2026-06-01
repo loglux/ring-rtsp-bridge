@@ -48,7 +48,7 @@
           <span x-text="key"></span>
         </span>
       </template>
-      <a href="http://192.168.10.32:5000" target="_blank"
+      <a href="{{ frigate_url }}" target="_blank"
          class="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand text-white hover:bg-brand-dark transition-colors">
         Frigate UI ↗
       </a>
@@ -434,10 +434,10 @@
     <div class="card p-4 flex items-center justify-between">
       <p x-show="saved==='detection'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
       <span x-show="saved!=='detection'"></span>
-      <button @click="saveDetection()" :disabled="saving"
+      <button @click="saveDetection()" :disabled="savingDetection"
               class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
-        <span x-show="!saving">Save & restart Frigate</span>
-        <span x-show="saving">Saving…</span>
+        <span x-show="!savingDetection">Save & restart Frigate</span>
+        <span x-show="savingDetection">Saving…</span>
       </button>
     </div>
   </div>
@@ -452,7 +452,7 @@
             <label class="text-sm font-medium">Continuous <span class="text-zinc-400 text-xs font-normal">(all footage, regardless of events)</span></label>
             <span class="text-lg font-bold text-brand" x-text="continuousDays==0 ? 'Off' : continuousDays+' days'"></span>
           </div>
-          <input type="range" min="0" max="14" x-model="continuousDays"
+          <input type="range" min="0" max="14" x-model.number="continuousDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
           <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>Off</span><span>14 days</span></div>
         </div>
@@ -461,7 +461,7 @@
             <label class="text-sm font-medium">Motion clips <span class="text-zinc-400 text-xs font-normal">(pixel motion detected)</span></label>
             <span class="text-lg font-bold text-brand" x-text="motionDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="30" x-model="motionDays"
+          <input type="range" min="1" max="30" x-model.number="motionDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
           <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>30 days</span></div>
         </div>
@@ -470,7 +470,7 @@
             <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs font-normal">(person / car / etc.)</span></label>
             <span class="text-lg font-bold text-brand" x-text="alertDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="90" x-model="alertDays"
+          <input type="range" min="1" max="90" x-model.number="alertDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
           <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
@@ -479,7 +479,7 @@
             <label class="text-sm font-medium">Detections <span class="text-zinc-400 text-xs font-normal">(motion only, no object)</span></label>
             <span class="text-lg font-bold text-brand" x-text="detectionDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="90" x-model="detectionDays"
+          <input type="range" min="1" max="90" x-model.number="detectionDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
           <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
@@ -487,10 +487,10 @@
       <div class="flex items-center justify-between">
         <p x-show="saved==='retention'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
         <span x-show="saved!=='retention'"></span>
-        <button @click="saveRetention()" :disabled="saving"
+        <button @click="saveRetention()" :disabled="savingRetention"
                 class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
-          <span x-show="!saving">Save & restart Frigate</span>
-          <span x-show="saving">Saving…</span>
+          <span x-show="!savingRetention">Save & restart Frigate</span>
+          <span x-show="savingRetention">Saving…</span>
         </button>
       </div>
     </div>
@@ -513,10 +513,10 @@
                  class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm bg-white">
         </div>
       </div>
-      <button @click="saveCredentials()" :disabled="saving"
+      <button @click="saveCredentials()" :disabled="savingCredentials"
               class="w-full px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium">
-        <span x-show="!saving">Save & restart ring-mqtt</span>
-        <span x-show="saving">Saving…</span>
+        <span x-show="!savingCredentials">Save & restart ring-mqtt</span>
+        <span x-show="savingCredentials">Saving…</span>
       </button>
       <div x-show="saved==='credentials'" class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
         <p class="text-sm font-medium text-amber-800">✓ ring-mqtt restarted.</p>
@@ -590,7 +590,8 @@ function app() {
     rtspPass: {{ (ring_cfg.get('livestream_pass','')) | tojson }},
 
     logsService: 'frigate', logsContent: '',
-    saving: false, saved: null, restarting: null,
+    savingDetection: false, savingRetention: false, savingCredentials: false,
+    saved: null, restarting: null,
 
     async init() {
       const camCfg = {{ (fcfg.get('cameras',{})) | tojson }};
@@ -659,9 +660,11 @@ function app() {
       const fd = new FormData();
       fd.append('camera_id', id); fd.append('camera_name', name);
       fd.append('wired', wired ? 'true' : 'false');
-      await fetch('/api/cameras/add', {method:'POST', body:fd});
+      const r = await fetch('/api/cameras/add', {method:'POST', body:fd});
+      if (!(await r.json()).ok) return;
       this.activeCameras.push(name);
       this.allCameras[name] = {battery:!wired, active:true, camera_id:id, config:{}};
+      this.discoveredCameras = this.discoveredCameras.filter(i=>i!==id);
       delete this.newCameraNames[id];
     },
 
@@ -674,6 +677,8 @@ function app() {
       if ((await r.json()).ok) {
         const i = this.activeCameras.indexOf(oldName);
         if (i!==-1) this.activeCameras[i]=newName;
+        const entry = this.allCameras[oldName];
+        if (entry) { this.allCameras[newName]=entry; delete this.allCameras[oldName]; }
       }
     },
 
@@ -682,6 +687,7 @@ function app() {
       const fd = new FormData(); fd.append('camera_name', name);
       await fetch('/api/cameras/remove', {method:'POST', body:fd});
       this.activeCameras = this.activeCameras.filter(c=>c!==name);
+      delete this.allCameras[name];
     },
 
     initCameraOverride(cam) {
@@ -694,7 +700,7 @@ function app() {
       i===-1 ? this.cameraObjects[cam].push(obj) : this.cameraObjects[cam].splice(i,1);
     },
     async saveDetection() {
-      this.saving=true;
+      this.savingDetection=true;
       try {
         const perCamera={};
         for (const cam of this.activeCameras)
@@ -703,27 +709,27 @@ function app() {
           body: JSON.stringify({global_objects:this.trackedObjects, per_camera:perCamera})});
         this.saved='detection';
         setTimeout(()=>this.saved=null, 5000);
-      } finally { this.saving=false; }
+      } finally { this.savingDetection=false; }
     },
 
     async saveRetention() {
-      this.saving=true;
+      this.savingRetention=true;
       try {
         await fetch('/api/retention', {method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({continuous_days:this.continuousDays, motion_days:this.motionDays, alerts_days:this.alertDays, detections_days:this.detectionDays})});
         this.saved='retention';
         setTimeout(()=>this.saved=null, 5000);
-      } finally { this.saving=false; }
+      } finally { this.savingRetention=false; }
     },
 
     async saveCredentials() {
-      this.saving=true;
+      this.savingCredentials=true;
       try {
         await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
         this.saved='credentials';
         setTimeout(()=>this.saved=null, 8000);
-      } finally { this.saving=false; }
+      } finally { this.savingCredentials=false; }
     },
 
     async saveRecordSeconds(camName, value) {
