@@ -616,22 +616,23 @@ def _on_mqtt_message(client, userdata, msg):
     topic   = msg.topic
     payload = msg.payload.decode("utf-8", errors="replace").strip()
 
-    # motion/state
-    m = re.search(r"/camera/([^/]+)/motion/state$", topic)
+    # motion/state  OR  ding/state — both trigger recording
+    m = re.search(r"/camera/([^/]+)/(motion|ding)/state$", topic)
     if m:
-        camera_id = m.group(1)
-        cam_name  = _camera_name_for_id(camera_id)
+        camera_id  = m.group(1)
+        event_type = m.group(2)  # "motion" or "ding"
+        cam_name   = _camera_name_for_id(camera_id)
         if not cam_name:
             return
         meta     = read_camera_meta()
         cam_meta = meta.get(cam_name, {})
         record_seconds = cam_meta.get("record_seconds", 60)
         if payload.upper() == "ON":
-            logger.info("Motion ON — %s, recording for %ds", cam_name, record_seconds)
+            logger.info("%s ON — %s, recording for %ds", event_type.capitalize(), cam_name, record_seconds)
             _record_motion_event(cam_name)
             _frigate_set_camera_enabled(cam_name, True)
             _schedule_disable(cam_name, record_seconds)
-        elif payload.upper() == "OFF":
+        elif payload.upper() == "OFF" and event_type == "motion":
             logger.info("Motion OFF — %s, stopping in %ds", cam_name, record_seconds)
             _schedule_disable(cam_name, record_seconds)
         return
