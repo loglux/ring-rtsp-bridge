@@ -436,7 +436,8 @@ async def api_save_retention(request: Request):
     data = await request.json()
     fcfg = read_frigate_config()
     record = fcfg.setdefault("record", {})
-    record.setdefault("alerts", {})["retain"]     = {"days": int(data.get("alerts_days", 30))}
+    record["retain"]                               = {"days": int(data.get("retain_days", 7))}
+    record.setdefault("alerts", {})["retain"]      = {"days": int(data.get("alerts_days", 30))}
     record.setdefault("detections", {})["retain"]  = {"days": int(data.get("detections_days", 14))}
     write_frigate_config(fcfg)
     restart_container("frigate")

@@ -445,8 +445,17 @@
   <!-- ══ RETENTION ══════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='retention'" x-cloak>
     <div class="card p-6 max-w-xl">
-      <p class="section-title">Event retention</p>
+      <p class="section-title">Recording retention</p>
       <div class="space-y-7 mb-6 mt-4">
+        <div>
+          <div class="flex justify-between items-baseline mb-2">
+            <label class="text-sm font-medium">All recordings <span class="text-zinc-400 text-xs font-normal">(continuous, required for clips)</span></label>
+            <span class="text-lg font-bold text-brand" x-text="retainDays+' days'"></span>
+          </div>
+          <input type="range" min="1" max="30" x-model="retainDays"
+                 class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
+          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>30 days</span></div>
+        </div>
         <div>
           <div class="flex justify-between items-baseline mb-2">
             <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs font-normal">(person / car / etc.)</span></label>
@@ -563,6 +572,7 @@ function app() {
     cameraOverrideEnabled: {},
     cameraObjects: {},
 
+    retainDays:    {{ (fcfg.get('record',{}).get('retain',{}).get('days',7)) }},
     alertDays:     {{ (fcfg.get('record',{}).get('alerts',{}).get('retain',{}).get('days',30)) }},
     detectionDays: {{ (fcfg.get('record',{}).get('detections',{}).get('retain',{}).get('days',14)) }},
 
@@ -687,7 +697,7 @@ function app() {
     async saveRetention() {
       this.saving=true;
       await fetch('/api/retention', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({alerts_days:this.alertDays, detections_days:this.detectionDays})});
+        body: JSON.stringify({retain_days:this.retainDays, alerts_days:this.alertDays, detections_days:this.detectionDays})});
       this.saving=false; this.saved='retention';
       setTimeout(()=>this.saved=null, 5000);
     },
