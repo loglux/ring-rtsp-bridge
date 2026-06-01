@@ -254,14 +254,21 @@
       <p class="text-xs text-zinc-400 mb-4">Cameras found in your Ring account via ring-mqtt.</p>
       <div class="space-y-2" x-show="discoveredCameras.length>0">
         <template x-for="id in discoveredCameras" :key="id">
-          <div class="flex items-center gap-3 p-3 bg-zinc-50 rounded-xl">
-            <span class="text-sm text-zinc-500 font-mono flex-1" x-text="id"></span>
-            <input x-model="newCameraNames[id]" placeholder="name (e.g. front_door)"
-                   class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-44 bg-white">
-            <button @click="addCamera(id)" :disabled="!newCameraNames[id]"
-                    class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
-              Add to Frigate
-            </button>
+          <div class="flex flex-col gap-2 p-3 bg-zinc-50 rounded-xl"
+               x-data="{wired: false}">
+            <div class="flex items-center gap-3">
+              <span class="text-sm text-zinc-500 font-mono flex-1" x-text="id"></span>
+              <input x-model="newCameraNames[id]" placeholder="name (e.g. ring_front)"
+                     class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-44 bg-white">
+              <button @click="addCamera(id, wired)" :disabled="!newCameraNames[id]"
+                      class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
+                Add to Frigate
+              </button>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer w-fit">
+              <input type="checkbox" x-model="wired" class="w-3.5 h-3.5 accent-brand">
+              <span class="text-xs text-zinc-500">Wired / powered (use live stream, not event)</span>
+            </label>
           </div>
         </template>
       </div>
@@ -529,13 +536,14 @@ function app() {
       finally {this.addingRtsp=false;}
     },
 
-    async addCamera(id) {
+    async addCamera(id, wired=false) {
       const name = this.newCameraNames[id];
       if (!name) return;
       const fd = new FormData();
       fd.append('camera_id', id); fd.append('camera_name', name);
+      fd.append('wired', wired ? 'true' : 'false');
       await fetch('/api/cameras/add',{method:'POST',body:fd});
-      this.allCameras[name] = {battery:true, active:false, camera_id:id, config:{}};
+      this.allCameras[name] = {battery:!wired, active:true, camera_id:id, config:{}};
       delete this.newCameraNames[id];
     },
 

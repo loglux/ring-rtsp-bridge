@@ -39,12 +39,15 @@ def _go2rtc_rtsp_credentials() -> tuple[str, str]:
     except Exception:
         return "stream_user", ""
 
-# Default Frigate camera config template for a Ring camera
-def ring_camera_config(camera_id: str) -> dict:
+# Frigate config template for a Ring camera.
+# battery=True  → _event stream (activates only on motion, saves battery)
+# battery=False → _live stream  (continuous, for wired/transformer-powered cameras)
+def ring_camera_config(camera_id: str, battery: bool = True) -> dict:
     user, password = _go2rtc_rtsp_credentials()
+    stream = f"{camera_id}_event" if battery else f"{camera_id}_live"
     return {
         "ffmpeg": {"inputs": [{
-            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_event",
+            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{stream}",
             "roles": ["detect", "record"],
         }]},
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
@@ -265,11 +268,16 @@ async def api_cameras():
 
 
 @app.post("/api/cameras/add")
-async def api_add_ring_camera(camera_id: str = Form(...), camera_name: str = Form(...)):
-    """Add a Ring battery camera using the event stream — records on motion, no battery drain."""
-    cfg = ring_camera_config(camera_id)
+async def api_add_ring_camera(
+    camera_id: str = Form(...),
+    camera_name: str = Form(...),
+    wired: str = Form("false"),
+):
+    """Add a Ring camera. wired=true → _live stream (powered); default → _event (battery)."""
+    is_battery = wired.lower() not in ("true", "1", "yes")
+    cfg = ring_camera_config(camera_id, battery=is_battery)
     meta = read_camera_meta()
-    meta[camera_name] = {"battery": True, "active": True, "camera_id": camera_id, "config": cfg}
+    meta[camera_name] = {"battery": is_battery, "active": True, "camera_id": camera_id, "config": cfg}
     write_camera_meta(meta)
     fcfg = read_frigate_config()
     fcfg.setdefault("cameras", {})[camera_name] = cfg
