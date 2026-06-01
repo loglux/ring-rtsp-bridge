@@ -30,11 +30,21 @@ SERVICES = {
 
 ALL_OBJECTS = ["person", "car", "dog", "cat", "bicycle", "motorcycle", "truck", "bird"]
 
+def _go2rtc_rtsp_credentials() -> tuple[str, str]:
+    """Read RTSP username/password from go2rtc.yaml."""
+    try:
+        cfg = yaml.safe_load(GO2RTC_PATH.read_text()) or {}
+        rtsp = cfg.get("rtsp", {})
+        return rtsp.get("username", "stream_user"), rtsp.get("password", "")
+    except Exception:
+        return "stream_user", ""
+
 # Default Frigate camera config template for a Ring camera
 def ring_camera_config(camera_id: str) -> dict:
+    user, password = _go2rtc_rtsp_credentials()
     return {
         "ffmpeg": {"inputs": [{
-            "path": f"rtsp://{{FRIGATE_RTSP_USER}}:{{FRIGATE_RTSP_PASSWORD}}@ring-mqtt:8554/{camera_id}_live",
+            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_live",
             "roles": ["detect", "record"],
         }]},
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
