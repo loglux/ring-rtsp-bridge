@@ -44,15 +44,17 @@ def _go2rtc_rtsp_credentials() -> tuple[str, str]:
 # battery=False → _live stream always present (wired/transformer-powered cameras)
 def ring_camera_config(camera_id: str, battery: bool = True) -> dict:
     user, password = _go2rtc_rtsp_credentials()
-    stream = f"{camera_id}_live"  # always _live; battery cameras are added/removed on motion
-    return {
+    cfg = {
         "ffmpeg": {"inputs": [{
-            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{stream}",
+            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_live",
             "roles": ["detect", "record"],
         }]},
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
         "motion": {"threshold": 25, "contour_area": 100},
     }
+    if battery:
+        cfg["enabled"] = False  # disabled by default; toggled on motion
+    return cfg
 
 def rtsp_camera_config(rtsp_url: str) -> dict:
     return {
@@ -152,12 +154,19 @@ def all_known_cameras() -> dict:
     active = fcfg.get("cameras", {})
     result = {}
 
-    # Active cameras in Frigate
+    # Cameras in Frigate config (enabled or disabled)
     for name, cfg in active.items():
         m = meta.get(name, {})
+        # battery cameras: active = camera-level enabled flag in Frigate config
+        # wired cameras:   active = True (always on)
+        is_battery = m.get("battery", False)
+        if is_battery:
+            is_active = cfg.get("enabled", True)  # default True if not set
+        else:
+            is_active = True
         result[name] = {
-            "battery":        m.get("battery", False),
-            "active":         True,
+            "battery":        is_battery,
+            "active":         is_active,
             "config":         cfg,
             "camera_id":      m.get("camera_id"),
             "battery_level":  m.get("battery_level"),
@@ -379,7 +388,7 @@ async def api_camera_live(camera: str, request: Request):
                 t.cancel()
 
     # Toggle detect + record via Frigate MQTT commands — no restart needed
-    _frigate_set_recording(camera, enabled)
+    _frigate_set_camera_enabled(camera, enabled)
 
     return {"ok": True, "camera": camera, "enabled": enabled}
 
@@ -520,12 +529,14 @@ async def api_cleanup_orphaned(request: Request):
 
 
 # ── MQTT listener ─────────────────────────────────────────────────────────────
-# Battery cameras stay IN Frigate config permanently (removing them causes Frigate
-# to delete their recordings). On motion we toggle detect+record via Frigate API
-# — no config change, no Frigate restart, no recording loss.
+# Battery cameras stay IN Frigate config permanently (removing them causes
+# Frigate to delete their recordings). We toggle camera-level `enabled` flag:
 #
-#   motion ON  → enable detect+record via Frigate API
-#   motion OFF → disable detect+record after record_seconds via Frigate API
+#   motion ON  → set enabled:true  in Frigate config → restart Frigate → records
+#   motion OFF → set enabled:false in Frigate config → restart Frigate → Ring sleeps
+#
+# `enabled:false` stops the ffmpeg process entirely (no RTSP connection = no
+# battery drain) while keeping the camera in config so recordings are preserved.
 
 logger = logging.getLogger("ring_admin")
 logging.basicConfig(level=logging.INFO)
@@ -545,22 +556,31 @@ def _camera_name_for_id(camera_id: str) -> str | None:
     return None
 
 
-def _frigate_set_recording(cam_name: str, enabled: bool):
-    """Toggle detect + record for a camera via Frigate MQTT commands."""
-    state = "ON" if enabled else "OFF"
+def _frigate_set_camera_enabled(cam_name: str, enabled: bool):
+    """Set camera-level enabled flag in Frigate config and restart.
+
+    enabled=True  → Frigate connects to RTSP, records
+    enabled=False → Frigate stops the camera process entirely (no RTSP = no battery drain)
+    Recordings are preserved because the camera stays in config.
+    """
     try:
-        pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
-        pub.publish(f"frigate/{cam_name}/detect/set",    state, retain=False)
-        pub.publish(f"frigate/{cam_name}/recordings/set", state, retain=False)
-        pub.disconnect()
+        fcfg = read_frigate_config()
+        cam  = fcfg.get("cameras", {}).get(cam_name)
+        if cam is None:
+            logger.warning("_frigate_set_camera_enabled: %s not in Frigate config", cam_name)
+            return
+        cam["enabled"] = enabled
+        write_frigate_config(fcfg)
+
         meta = read_camera_meta()
         if cam_name in meta:
             meta[cam_name]["active"] = enabled
             write_camera_meta(meta)
-        logger.info("Recording %s for %s (MQTT)", state, cam_name)
+
+        restart_container("frigate")
+        logger.info("Camera %s %s (Frigate restarted)", cam_name, "enabled" if enabled else "disabled")
     except Exception as e:
-        logger.warning("Could not toggle recording for %s: %s", cam_name, e)
+        logger.warning("Could not set camera enabled for %s: %s", cam_name, e)
 
 
 def _schedule_disable(cam_name: str, seconds: int):
@@ -568,7 +588,7 @@ def _schedule_disable(cam_name: str, seconds: int):
         old = _motion_timers.get(cam_name)
         if old:
             old.cancel()
-        t = threading.Timer(seconds, _frigate_set_recording, args=[cam_name, False])
+        t = threading.Timer(seconds, _frigate_set_camera_enabled, args=[cam_name, False])
         t.daemon = True
         t.start()
         _motion_timers[cam_name] = t
@@ -609,7 +629,7 @@ def _on_mqtt_message(client, userdata, msg):
         if payload.upper() == "ON":
             logger.info("Motion ON — %s, recording for %ds", cam_name, record_seconds)
             _record_motion_event(cam_name)
-            _frigate_set_recording(cam_name, True)
+            _frigate_set_camera_enabled(cam_name, True)
             _schedule_disable(cam_name, record_seconds)
         elif payload.upper() == "OFF":
             logger.info("Motion OFF — %s, stopping in %ds", cam_name, record_seconds)
