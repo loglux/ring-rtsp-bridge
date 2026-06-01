@@ -22,6 +22,8 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; }
     .card { @apply bg-white rounded-2xl border border-zinc-100 shadow-sm; }
     input:focus { outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .section-title { @apply text-[11px] font-semibold uppercase tracking-widest text-zinc-400 mb-1; }
+    .section-sub   { @apply text-xs text-zinc-400 mb-4; }
   </style>
 </head>
 
@@ -30,7 +32,6 @@
 <!-- ══ HEADER ══════════════════════════════════════════════════════════════ -->
 <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-zinc-200">
   <div class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between gap-4">
-
     <div class="flex items-center gap-2.5">
       <div class="w-7 h-7 rounded-lg bg-brand flex items-center justify-center shadow">
         <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -39,8 +40,6 @@
       </div>
       <span class="font-semibold text-sm tracking-tight">Ring Bridge</span>
     </div>
-
-    <!-- Status pills -->
     <div class="flex items-center gap-2">
       <template x-for="(svc, key) in services" :key="key">
         <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
@@ -59,13 +58,12 @@
 
 <!-- ══ NAV TABS ════════════════════════════════════════════════════════════ -->
 <div class="max-w-6xl mx-auto px-5 mt-5">
-  <div class="flex gap-1 p-1 bg-zinc-100 rounded-xl w-fit mb-6">
+  <div class="flex gap-1 p-1 bg-zinc-100 rounded-xl w-fit mb-6 overflow-x-auto">
     <template x-for="tab in tabs" :key="tab.id">
       <button @click="setTab(tab.id)"
-              class="px-4 py-1.5 text-sm font-medium rounded-lg transition-all"
-              :class="activeTab===tab.id
-                ? 'bg-white text-brand shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-800'">
+              class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-lg transition-all whitespace-nowrap"
+              :class="activeTab===tab.id ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-800'">
+        <span x-text="tab.icon"></span>
         <span x-text="tab.label"></span>
       </button>
     </template>
@@ -74,50 +72,42 @@
   <!-- ══ DASHBOARD ══════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='dashboard'" x-cloak>
 
-    <!-- Camera cards — all cameras (active + inactive battery) -->
+    <!-- Camera cards -->
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
       <template x-for="(meta, name) in allCameras" :key="name">
         <div class="card overflow-hidden">
-          <!-- Status accent strip -->
           <div class="h-0.5"
                :class="!meta.active ? 'bg-zinc-200'
                  : (meta.battery && !cameraStats[name]?.camera_fps) ? 'bg-amber-300'
-                 : (meta.battery && cameraStats[name]?.camera_fps) ? 'bg-emerald-400'
+                 : (meta.battery && cameraStats[name]?.camera_fps)  ? 'bg-emerald-400'
                  : 'bg-brand'">
           </div>
           <div class="p-5">
-            <!-- Header -->
             <div class="flex items-start justify-between mb-4">
               <div class="flex items-center gap-3">
-                <!-- Camera type icon -->
                 <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                     :class="meta.battery ? 'bg-amber-50' : 'bg-brand/8'">
+                     :class="meta.battery ? 'bg-amber-50' : 'bg-indigo-50'">
                   <span x-text="meta.battery ? '🔔' : '📷'"></span>
                 </div>
                 <div>
                   <p class="text-sm font-bold leading-snug" x-text="name"></p>
-                  <!-- Battery bar -->
                   <div x-show="meta.battery" class="flex items-center gap-1.5 mt-1">
                     <div class="w-14 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
                       <div class="h-full rounded-full transition-all duration-500"
                            :style="'width:' + (meta.battery_level ?? 0) + '%'"
                            :class="(meta.battery_level ?? 0) > 50 ? 'bg-emerald-400'
-                             : (meta.battery_level ?? 0) > 20 ? 'bg-amber-400'
-                             : 'bg-red-400'">
+                             : (meta.battery_level ?? 0) > 20 ? 'bg-amber-400' : 'bg-red-400'">
                       </div>
                     </div>
                     <span class="text-[11px] font-medium"
                           :class="(meta.battery_level ?? 0) > 50 ? 'text-emerald-600'
-                            : (meta.battery_level ?? 0) > 20 ? 'text-amber-600'
-                            : 'text-red-500'"
+                            : (meta.battery_level ?? 0) > 20 ? 'text-amber-600' : 'text-red-500'"
                           x-text="meta.battery_level != null ? meta.battery_level + '%' : '—'">
                     </span>
                   </div>
                 </div>
               </div>
-              <!-- Status button -->
-              <button @click="toggleLive(name)"
-                      :disabled="togglingLive===name"
+              <button @click="toggleLive(name)" :disabled="togglingLive===name"
                       class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex-shrink-0 ml-2"
                       :class="!meta.active
                         ? 'bg-zinc-100 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700'
@@ -132,41 +122,37 @@
                 <span x-show="togglingLive!==name"
                       x-text="!meta.active ? 'Paused'
                              : (meta.battery && !cameraStats[name]?.camera_fps) ? 'Ready'
-                             : meta.battery ? 'Recording'
-                             : 'Live'">
+                             : meta.battery ? 'Recording' : 'Live'">
                 </span>
                 <span x-show="togglingLive===name">…</span>
               </button>
             </div>
 
-            <!-- Stats: wired live or battery recording -->
+            <!-- fps grid — wired live or battery actively recording -->
             <div x-show="meta.active && (!meta.battery || cameraStats[name]?.camera_fps)"
                  class="grid grid-cols-3 gap-2 text-center">
               <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand"
-                   x-text="(cameraStats[name]?.camera_fps||0).toFixed(1)"></p>
+                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.camera_fps||0).toFixed(1)"></p>
                 <p class="text-[10px] text-zinc-400 mt-0.5">cam fps</p>
               </div>
               <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand"
-                   x-text="(cameraStats[name]?.detection_fps||0).toFixed(1)"></p>
+                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.detection_fps||0).toFixed(1)"></p>
                 <p class="text-[10px] text-zinc-400 mt-0.5">detect</p>
               </div>
               <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand"
-                   x-text="(cameraStats[name]?.process_fps||0).toFixed(1)"></p>
+                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.process_fps||0).toFixed(1)"></p>
                 <p class="text-[10px] text-zinc-400 mt-0.5">process</p>
               </div>
             </div>
 
-            <!-- Battery idle state -->
+            <!-- battery idle -->
             <div x-show="meta.battery && meta.active && !cameraStats[name]?.camera_fps"
                  class="flex items-center justify-center gap-2 py-3 bg-amber-50 rounded-xl">
               <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"></span>
               <span class="text-xs text-amber-700 font-medium">Waiting for motion</span>
             </div>
 
-            <!-- Paused state -->
+            <!-- paused -->
             <div x-show="!meta.active"
                  class="flex items-center justify-center gap-2 py-3 bg-zinc-50 rounded-xl">
               <span class="text-xs text-zinc-400">Detection paused</span>
@@ -181,7 +167,7 @@
           <div class="h-0.5 bg-brand/40"></div>
           <div class="p-5">
             <div class="flex items-center gap-3 mb-4">
-              <div class="w-10 h-10 rounded-xl bg-brand/8 flex items-center justify-center text-xl">🤖</div>
+              <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🤖</div>
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">Detector</p>
                 <p class="text-sm font-bold" x-text="name"></p>
@@ -196,55 +182,57 @@
       </template>
     </div>
 
-    <!-- Services -->
-    <div class="card p-5">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-3">Services</p>
-      <div class="divide-y divide-zinc-100">
-        <template x-for="(svc, key) in services" :key="key">
-          <div class="flex items-center justify-between py-3">
-            <div class="flex items-center gap-3">
-              <span class="w-2 h-2 rounded-full flex-shrink-0"
-                    :class="svc.status==='running' ? 'bg-emerald-400' : 'bg-red-400'"></span>
-              <span class="text-sm font-medium" x-text="key"></span>
-              <span class="text-xs px-2 py-0.5 rounded-full"
-                    :class="svc.status==='running' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'"
-                    x-text="svc.status"></span>
+    <!-- Services grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <template x-for="(svc, key) in services" :key="key">
+        <div class="card p-4 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0"
+                 :class="svc.status==='running' ? 'bg-emerald-50' : 'bg-red-50'">
+              <span x-text="key==='mosquitto' ? '📡' : key==='ring-mqtt' ? '💍' : '🎬'"></span>
             </div>
-            <div class="flex gap-2">
-              <button @click="showLogs(key)"
-                      class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-colors">
-                Logs
-              </button>
-              <button @click="restart(key)" :disabled="restarting===key"
-                      class="text-xs px-3 py-1.5 rounded-lg bg-brand/10 text-brand hover:bg-brand/20 transition-colors disabled:opacity-50">
-                <span x-show="restarting!==key">Restart</span>
-                <span x-show="restarting===key">…</span>
-              </button>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold truncate" x-text="key"></p>
+              <p class="text-[11px] font-medium"
+                 :class="svc.status==='running' ? 'text-emerald-600' : 'text-red-500'"
+                 x-text="svc.status">
+              </p>
             </div>
           </div>
-        </template>
-      </div>
+          <div class="flex gap-1.5 flex-shrink-0">
+            <button @click="showLogs(key)"
+                    class="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-colors">
+              Logs
+            </button>
+            <button @click="restart(key)" :disabled="restarting===key"
+                    class="text-xs px-2.5 py-1.5 rounded-lg bg-brand/10 text-brand hover:bg-brand/20 transition-colors disabled:opacity-50">
+              <span x-show="restarting!==key">↺</span>
+              <span x-show="restarting===key">…</span>
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 
   <!-- ══ CAMERAS ════════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='cameras'" x-cloak class="space-y-4">
 
-    <!-- Active cameras -->
     <div class="card p-5">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-1">Active cameras</p>
-      <p class="text-xs text-zinc-400 mb-4">Cameras currently in Frigate. Click Rename to edit the name inline.</p>
+      <p class="section-title">Active cameras</p>
+      <p class="section-sub">Cameras currently monitored by Frigate.</p>
       <div class="space-y-2" x-show="activeCameras.length>0">
         <template x-for="cam in activeCameras" :key="cam">
           <div class="flex items-center gap-3 px-3 py-2.5 bg-zinc-50 rounded-xl"
                x-data="{renaming:false, newName:cam}">
-            <div class="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></div>
-            <span x-show="!renaming" class="text-sm font-medium flex-1" x-text="cam"></span>
+            <span class="text-base flex-shrink-0"
+                  x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
+            <span x-show="!renaming" class="text-sm font-medium flex-1 truncate" x-text="cam"></span>
             <input x-show="renaming" x-model="newName"
                    @keyup.enter="renameCamera(cam,newName);renaming=false"
                    @keyup.escape="renaming=false;newName=cam"
                    class="text-sm px-2 py-1 border border-brand/40 rounded-lg flex-1 bg-white">
-            <div class="flex gap-2">
+            <div class="flex gap-1.5">
               <template x-if="!renaming">
                 <button @click="renaming=true;newName=cam"
                         class="text-xs px-2.5 py-1.5 border border-zinc-200 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors">
@@ -277,10 +265,9 @@
       <p x-show="activeCameras.length===0" class="text-sm text-zinc-400 italic">No cameras configured yet</p>
     </div>
 
-    <!-- Add by RTSP URL -->
     <div class="card p-5">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-1">Add camera — RTSP URL</p>
-      <p class="text-xs text-zinc-400 mb-4">Any IP camera: Hikvision, Dahua, Reolink, Axis, etc.</p>
+      <p class="section-title">Add camera — RTSP URL</p>
+      <p class="section-sub">Any IP camera: Hikvision, Dahua, Reolink, Axis, etc. Works entirely without cloud.</p>
       <div class="flex flex-col sm:flex-row gap-3">
         <input x-model="newRtspName" placeholder="Name, e.g. backyard"
                class="text-sm px-3 py-2 border border-zinc-200 rounded-xl w-full sm:w-44 bg-white">
@@ -295,26 +282,24 @@
       <p x-show="rtspError" class="text-sm text-red-500 mt-2" x-text="rtspError"></p>
     </div>
 
-    <!-- Ring discovered -->
     <div class="card p-5">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-1">Ring cameras — auto-discovered</p>
-      <p class="text-xs text-zinc-400 mb-4">Cameras found in your Ring account via ring-mqtt.</p>
+      <p class="section-title">Ring cameras — auto-discovered</p>
+      <p class="section-sub">Detected in your Ring account via ring-mqtt. Battery cameras use event stream — no drain when idle.</p>
       <div class="space-y-2" x-show="discoveredCameras.length>0">
         <template x-for="id in discoveredCameras" :key="id">
-          <div class="flex flex-col gap-2 p-3 bg-zinc-50 rounded-xl"
-               x-data="{wired: false}">
+          <div class="flex flex-col gap-2 p-3 bg-zinc-50 rounded-xl" x-data="{wired:false}">
             <div class="flex items-center gap-3">
-              <span class="text-sm text-zinc-500 font-mono flex-1" x-text="id"></span>
+              <span class="text-sm text-zinc-500 font-mono flex-1 truncate" x-text="id"></span>
               <input x-model="newCameraNames[id]" placeholder="name (e.g. ring_front)"
-                     class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-44 bg-white">
+                     class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-40 bg-white">
               <button @click="addCamera(id, wired)" :disabled="!newCameraNames[id]"
-                      class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
+                      class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40 whitespace-nowrap">
                 Add to Frigate
               </button>
             </div>
             <label class="flex items-center gap-2 cursor-pointer w-fit">
               <input type="checkbox" x-model="wired" class="w-3.5 h-3.5 accent-brand">
-              <span class="text-xs text-zinc-500">Wired / powered (use live stream, not event)</span>
+              <span class="text-xs text-zinc-500">Wired / powered — use live stream instead of event</span>
             </label>
           </div>
         </template>
@@ -328,10 +313,9 @@
   <!-- ══ DETECTION ══════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='detection'" x-cloak class="space-y-4">
 
-    <!-- Global -->
     <div class="card p-5">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-1">Global — all cameras</p>
-      <p class="text-xs text-zinc-400 mb-4">Default object set. Per-camera overrides below.</p>
+      <p class="section-title">Global — all cameras</p>
+      <p class="section-sub">Default object set tracked by Frigate. Per-camera overrides below.</p>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <template x-for="obj in allObjects" :key="obj">
           <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
@@ -345,16 +329,18 @@
       </div>
     </div>
 
-    <!-- Per-camera overrides -->
     <template x-for="cam in activeCameras" :key="cam">
       <div class="card p-5">
         <div class="flex items-center justify-between mb-3">
-          <div>
-            <p class="text-sm font-bold" x-text="cam"></p>
-            <p class="text-xs text-zinc-400">Override for this camera only</p>
+          <div class="flex items-center gap-2">
+            <span x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
+            <div>
+              <p class="text-sm font-bold" x-text="cam"></p>
+              <p class="text-xs text-zinc-400">Per-camera override</p>
+            </div>
           </div>
           <button @click="cameraOverrideEnabled[cam]=!cameraOverrideEnabled[cam]; initCameraOverride(cam)"
-                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors"
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0"
                   :class="cameraOverrideEnabled[cam] ? 'bg-brand' : 'bg-zinc-300'">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform"
                   :class="cameraOverrideEnabled[cam] ? 'translate-x-6' : 'translate-x-1'"></span>
@@ -378,27 +364,30 @@
       </div>
     </template>
 
-    <button @click="saveDetection()" :disabled="saving"
-            class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium">
-      <span x-show="!saving">Save & restart Frigate</span>
-      <span x-show="saving">Saving…</span>
-    </button>
-    <p x-show="saved==='detection'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
+    <div class="card p-4 flex items-center justify-between">
+      <p x-show="saved==='detection'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
+      <span x-show="saved!=='detection'"></span>
+      <button @click="saveDetection()" :disabled="saving"
+              class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
+        <span x-show="!saving">Save & restart Frigate</span>
+        <span x-show="saving">Saving…</span>
+      </button>
+    </div>
   </div>
 
   <!-- ══ RETENTION ══════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='retention'" x-cloak>
     <div class="card p-6 max-w-xl">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-5">Event retention</p>
-      <div class="space-y-7 mb-6">
+      <p class="section-title">Event retention</p>
+      <div class="space-y-7 mb-6 mt-4">
         <div>
           <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs font-normal">(detected person/car/etc)</span></label>
+            <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs font-normal">(person / car / etc.)</span></label>
             <span class="text-lg font-bold text-brand" x-text="alertDays+' days'"></span>
           </div>
           <input type="range" min="1" max="90" x-model="alertDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1</span><span>90 days</span></div>
+          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
         <div>
           <div class="flex justify-between items-baseline mb-2">
@@ -407,23 +396,26 @@
           </div>
           <input type="range" min="1" max="90" x-model="detectionDays"
                  class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1</span><span>90 days</span></div>
+          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
         </div>
       </div>
-      <button @click="saveRetention()" :disabled="saving"
-              class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium">
-        <span x-show="!saving">Save & restart Frigate</span>
-        <span x-show="saving">Saving…</span>
-      </button>
-      <p x-show="saved==='retention'" class="text-sm text-emerald-600 font-medium mt-3">✓ Saved. Frigate is restarting.</p>
+      <div class="flex items-center justify-between">
+        <p x-show="saved==='retention'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
+        <span x-show="saved!=='retention'"></span>
+        <button @click="saveRetention()" :disabled="saving"
+                class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
+          <span x-show="!saving">Save & restart Frigate</span>
+          <span x-show="saving">Saving…</span>
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- ══ CREDENTIALS ════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='credentials'" x-cloak>
     <div class="card p-6 max-w-md">
-      <p class="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-1">RTSP credentials</p>
-      <p class="text-xs text-zinc-400 mb-5">Used by ring-mqtt to protect the Ring camera stream. After saving, also update <code class="bg-zinc-100 px-1 rounded">.env</code> on the host.</p>
+      <p class="section-title">RTSP credentials</p>
+      <p class="section-sub">Used by ring-mqtt for Ring camera streams. After saving, also update <code class="bg-zinc-100 px-1 rounded text-xs">.env</code> on the host.</p>
       <div class="space-y-4 mb-5">
         <div>
           <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Username</label>
@@ -437,7 +429,7 @@
         </div>
       </div>
       <button @click="saveCredentials()" :disabled="saving"
-              class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium w-full">
+              class="w-full px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium">
         <span x-show="!saving">Save & restart ring-mqtt</span>
         <span x-show="saving">Saving…</span>
       </button>
@@ -452,7 +444,7 @@
   <div x-show="activeTab==='logs'" x-cloak>
     <div class="card p-5">
       <div class="flex items-center justify-between mb-4">
-        <div class="flex gap-1.5 p-1 bg-zinc-100 rounded-lg">
+        <div class="flex gap-1 p-1 bg-zinc-100 rounded-lg">
           <template x-for="(_, key) in services" :key="key">
             <button @click="logsService=key; fetchLogs()"
                     class="px-3 py-1 text-xs font-medium rounded-md transition-all"
@@ -472,23 +464,22 @@
   </div>
 
   <div class="h-12"></div>
-</div><!-- /max-w-6xl -->
+</div>
 
 <script>
 function app() {
   return {
     activeTab: localStorage.getItem('ring-tab') || 'dashboard',
     tabs: [
-      {id:'dashboard',   label:'Dashboard'},
-      {id:'cameras',     label:'Cameras'},
-      {id:'detection',   label:'Detection'},
-      {id:'retention',   label:'Retention'},
-      {id:'credentials', label:'Credentials'},
-      {id:'logs',        label:'Logs'},
+      {id:'dashboard',   label:'Dashboard',   icon:'📊'},
+      {id:'cameras',     label:'Cameras',     icon:'📷'},
+      {id:'detection',   label:'Detection',   icon:'🔍'},
+      {id:'retention',   label:'Retention',   icon:'🗂'},
+      {id:'credentials', label:'Credentials', icon:'🔑'},
+      {id:'logs',        label:'Logs',        icon:'📋'},
     ],
     setTab(id) { this.activeTab=id; localStorage.setItem('ring-tab',id); },
 
-    // ── state ──────────────────────────────────────────────────────────
     services:     {{ statuses | tojson }},
     cameraStats:  {},
     detectorStats:{},
@@ -514,9 +505,7 @@ function app() {
     logsService: 'frigate', logsContent: '',
     saving: false, saved: null, restarting: null,
 
-    // ── init ───────────────────────────────────────────────────────────
     async init() {
-      // seed per-camera detection overrides
       const camCfg = {{ (fcfg.get('cameras',{})) | tojson }};
       for (const [name, cfg] of Object.entries(camCfg)) {
         const objs = cfg?.objects?.track;
@@ -528,7 +517,6 @@ function app() {
       if (this.activeTab === 'logs') this.fetchLogs();
     },
 
-    // ── status ─────────────────────────────────────────────────────────
     async refreshStatus() {
       try {
         const r = await fetch('/api/status');
@@ -540,14 +528,12 @@ function app() {
       } catch {}
     },
 
-    // ── live toggle ────────────────────────────────────────────────────
     async toggleLive(name) {
       const current = this.allCameras[name]?.active !== false;
       this.togglingLive = name;
       try {
         await fetch(`/api/camera/${name}/live`, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
+          method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({enabled: !current}),
         });
         if (this.allCameras[name])
@@ -555,7 +541,6 @@ function app() {
       } finally { this.togglingLive = null; }
     },
 
-    // ── service ops ────────────────────────────────────────────────────
     async restart(service) {
       this.restarting = service;
       try {
@@ -565,22 +550,20 @@ function app() {
       } finally { this.restarting = null; }
     },
 
-    // ── cameras ────────────────────────────────────────────────────────
     async addRtspCamera() {
-      this.rtspError = '';
-      this.addingRtsp = true;
+      this.rtspError = ''; this.addingRtsp = true;
       try {
-        const r = await fetch('/api/cameras/add-rtsp',{
+        const r = await fetch('/api/cameras/add-rtsp', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({name:this.newRtspName, rtsp_url:this.newRtspUrl}),
         });
         const d = await r.json();
-        if (d.error){this.rtspError=d.error; return;}
+        if (d.error) { this.rtspError=d.error; return; }
         this.activeCameras.push(this.newRtspName);
         this.allCameras[this.newRtspName] = {battery:false, active:true, config:{}};
         this.newRtspName=''; this.newRtspUrl='';
-      } catch {this.rtspError='Request failed';}
-      finally {this.addingRtsp=false;}
+      } catch { this.rtspError='Request failed'; }
+      finally { this.addingRtsp=false; }
     },
 
     async addCamera(id, wired=false) {
@@ -589,14 +572,15 @@ function app() {
       const fd = new FormData();
       fd.append('camera_id', id); fd.append('camera_name', name);
       fd.append('wired', wired ? 'true' : 'false');
-      await fetch('/api/cameras/add',{method:'POST',body:fd});
+      await fetch('/api/cameras/add', {method:'POST', body:fd});
+      this.activeCameras.push(name);
       this.allCameras[name] = {battery:!wired, active:true, camera_id:id, config:{}};
       delete this.newCameraNames[id];
     },
 
     async renameCamera(oldName, newName) {
       if (!newName || newName===oldName) return;
-      const r = await fetch('/api/cameras/rename',{
+      const r = await fetch('/api/cameras/rename', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({old_name:oldName, new_name:newName}),
       });
@@ -607,13 +591,12 @@ function app() {
     },
 
     async removeCamera(name) {
-      if (!confirm(`Remove camera "${name}" from Frigate?`)) return;
+      if (!confirm(`Remove camera "${name}"?`)) return;
       const fd = new FormData(); fd.append('camera_name', name);
-      await fetch('/api/cameras/remove',{method:'POST',body:fd});
+      await fetch('/api/cameras/remove', {method:'POST', body:fd});
       this.activeCameras = this.activeCameras.filter(c=>c!==name);
     },
 
-    // ── detection ──────────────────────────────────────────────────────
     initCameraOverride(cam) {
       if (this.cameraOverrideEnabled[cam] && !this.cameraObjects[cam]?.length)
         this.cameraObjects[cam] = [...this.trackedObjects];
@@ -628,33 +611,28 @@ function app() {
       const perCamera={};
       for (const cam of this.activeCameras)
         perCamera[cam] = this.cameraOverrideEnabled[cam] ? (this.cameraObjects[cam]||[]) : null;
-      await fetch('/api/detection',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({global_objects:this.trackedObjects, per_camera:perCamera})});
+      await fetch('/api/detection', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({global_objects:this.trackedObjects, per_camera:perCamera})});
       this.saving=false; this.saved='detection';
-      setTimeout(()=>this.saved=null,5000);
+      setTimeout(()=>this.saved=null, 5000);
     },
 
-    // ── retention ──────────────────────────────────────────────────────
     async saveRetention() {
       this.saving=true;
-      await fetch('/api/retention',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({alerts_days:this.alertDays, detections_days:this.detectionDays})});
+      await fetch('/api/retention', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({alerts_days:this.alertDays, detections_days:this.detectionDays})});
       this.saving=false; this.saved='retention';
-      setTimeout(()=>this.saved=null,5000);
+      setTimeout(()=>this.saved=null, 5000);
     },
 
-    // ── credentials ────────────────────────────────────────────────────
     async saveCredentials() {
       this.saving=true;
-      await fetch('/api/credentials',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
+      await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
       this.saving=false; this.saved='credentials';
     },
 
-    // ── logs ───────────────────────────────────────────────────────────
-    async showLogs(service) {
-      this.logsService=service; this.setTab('logs'); await this.fetchLogs();
-    },
+    async showLogs(service) { this.logsService=service; this.setTab('logs'); await this.fetchLogs(); },
     async fetchLogs() {
       this.logsContent='Loading…';
       try {
