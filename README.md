@@ -104,21 +104,24 @@ Any pixel motion → recording segment written to disk. AI model runs at 5 fps (
 
 In many ways this **outperforms paid cloud recording**: no compression artifacts from re-encoding, no cloud upload lag, configurable retention up to 90 days, and AI object detection that cloud plans often charge extra for.
 
-### Ring battery cameras (`_event` stream)
+### Ring battery cameras (event-driven, MQTT-triggered)
 
-Ring battery cameras use ring-mqtt's **event stream** rather than the live stream:
+Battery cameras use an event-driven flow to avoid draining the battery with a continuous RTSP stream:
 
-1. Ring's PIR sensor fires → Ring publishes a motion event to MQTT
-2. ring-mqtt activates the `_event` RTSP stream for that camera
-3. Frigate (already connected to that stream) receives the video and records
-4. Event ends → ring-mqtt stops the stream → Ring goes back to sleep
+1. Frigate starts with the camera **disabled** — no ffmpeg, no RTSP pull
+2. Ring's PIR sensor fires → ring-mqtt publishes `motion/state ON` or `ding/state ON` to MQTT
+3. The admin service receives the event → publishes `frigate/<cam>/enabled/set ON` to Frigate via MQTT
+4. Frigate starts ffmpeg and connects to the camera's `_live` RTSP stream → records the clip
+5. After the configured record window → admin publishes `frigate/<cam>/enabled/set OFF` → Frigate stops ffmpeg → Ring goes back to sleep
 
-**Result:** the Ring device only transmits video during actual motion events. No continuous RTSP pull, no battery drain between events. Frigate never needs to restart.
+**Why this matters:** Ring stops sending MQTT motion/ding events while actively streaming. Keeping the camera always-on in Frigate would mean Ring never reports events. The camera must be off between events for the trigger to work.
+
+> `_event` (ring-mqtt's pre-recorded cloud clip stream) requires a Ring Protect subscription and is not used here. We use `_live` only, triggered on demand.
 
 The admin panel shows each battery camera's state:
-- **🟡 Ready** — camera configured in Frigate, waiting for next event
-- **🟢 Recording** — event stream active, Frigate is recording right now
-- **⚫ Paused** — detect and record disabled manually
+- **🟡 Ready** — camera disabled in Frigate, Ring is idle and reporting events
+- **🟢 Recording** — live stream active, Frigate is recording right now
+- **⚫ Paused** — manually disabled
 
 Battery charge level is read from MQTT (`ring/.../info/state`) and shown in the dashboard, updated every ~5 minutes.
 
@@ -135,7 +138,7 @@ If your Ring doorbell is wired to a doorbell transformer, it can sustain a conti
 | **Dashboard** | Camera cards with live fps stats, battery level, Ready/Recording/Paused state; service status; restart buttons |
 | **Cameras** | Add Ring cameras (with wired/battery choice) or any RTSP camera; rename; remove |
 | **Detection** | Choose which objects Frigate tracks globally and per-camera |
-| **Retention** | Slider for alert and detection clip retention (days) |
+| **Retention** | Sliders for all four retention categories: Continuous, Motion clips, Alerts, Detections |
 | **Credentials** | Change RTSP username and password for ring-mqtt streams |
 | **Logs** | Live log tail for any service |
 
@@ -144,9 +147,13 @@ If your Ring doorbell is wired to a doorbell transformer, it can sustain a conti
 ## RTSP streams (ring-mqtt)
 
 ```
-rtsp://<user>:<pass>@<host>:8554/<camera_id>_event   # event-based (battery cameras)
-rtsp://<user>:<pass>@<host>:8554/<camera_id>_live    # continuous (wired cameras)
+rtsp://<user>:<pass>@<host>:8554/<camera_id>_live    # live on-demand stream (all cameras)
 ```
+
+`<camera_id>` is the Ring device ID shown in the admin panel.
+Streams auto-start when a client connects and auto-stop ~5–10 s after the last client disconnects.
+
+> `_event` streams require a Ring Protect subscription and are not used by this stack.
 
 Credentials are set in Admin → Credentials (or in `ring-mqtt-data/config.json`).
 

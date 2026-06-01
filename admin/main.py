@@ -436,7 +436,12 @@ async def api_save_retention(request: Request):
     data = await request.json()
     fcfg = read_frigate_config()
     record = fcfg.setdefault("record", {})
-    record.pop("retain", None)  # not supported in Frigate 0.17
+    continuous_days = int(data.get("continuous_days", 0))
+    if continuous_days > 0:
+        record["continuous"] = {"days": continuous_days}
+    else:
+        record.pop("continuous", None)
+    record["motion"] = {"days": int(data.get("motion_days", 7))}
     record.setdefault("alerts", {})["retain"]      = {"days": int(data.get("alerts_days", 30))}
     record.setdefault("detections", {})["retain"]  = {"days": int(data.get("detections_days", 14))}
     write_frigate_config(fcfg)
@@ -572,30 +577,28 @@ def _camera_name_for_id(camera_id: str) -> str | None:
 
 
 def _frigate_set_camera_enabled(cam_name: str, enabled: bool):
-    """Set camera-level enabled flag in Frigate config and restart.
+    """Toggle camera via Frigate MQTT — no Frigate restart needed.
 
-    enabled=True  → Frigate connects to RTSP, records
-    enabled=False → Frigate stops the camera process entirely (no RTSP = no battery drain)
+    Publishes to frigate/<cam>/enabled/set ON|OFF.
+    When OFF: Frigate stops the ffmpeg process (no RTSP = no battery drain).
+    When ON:  Frigate starts ffmpeg and begins recording.
     Recordings are preserved because the camera stays in config.
     """
+    state = "ON" if enabled else "OFF"
     try:
-        fcfg = read_frigate_config()
-        cam  = fcfg.get("cameras", {}).get(cam_name)
-        if cam is None:
-            logger.warning("_frigate_set_camera_enabled: %s not in Frigate config", cam_name)
-            return
-        cam["enabled"] = enabled
-        write_frigate_config(fcfg)
+        pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
+        pub.publish(f"frigate/{cam_name}/enabled/set", state, retain=False)
+        pub.disconnect()
 
         meta = read_camera_meta()
         if cam_name in meta:
             meta[cam_name]["active"] = enabled
             write_camera_meta(meta)
 
-        restart_container("frigate")
-        logger.info("Camera %s %s (Frigate restarted)", cam_name, "enabled" if enabled else "disabled")
+        logger.info("Camera %s → %s (via MQTT, no restart)", cam_name, state)
     except Exception as e:
-        logger.warning("Could not set camera enabled for %s: %s", cam_name, e)
+        logger.warning("Could not toggle camera %s: %s", cam_name, e)
 
 
 def _schedule_disable(cam_name: str, seconds: int):
