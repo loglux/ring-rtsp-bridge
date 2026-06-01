@@ -156,20 +156,22 @@ def all_known_cameras() -> dict:
     for name, cfg in active.items():
         m = meta.get(name, {})
         result[name] = {
-            "battery": m.get("battery", False),
-            "active":  True,
-            "config":  cfg,
-            "camera_id": m.get("camera_id"),
+            "battery":       m.get("battery", False),
+            "active":        True,
+            "config":        cfg,
+            "camera_id":     m.get("camera_id"),
+            "battery_level": m.get("battery_level"),
         }
 
     # Inactive battery cameras (in meta but not in Frigate)
     for name, m in meta.items():
         if name not in result and m.get("battery"):
             result[name] = {
-                "battery":   True,
-                "active":    False,
-                "config":    m.get("config", {}),
-                "camera_id": m.get("camera_id"),
+                "battery":       True,
+                "active":        False,
+                "config":        m.get("config", {}),
+                "camera_id":     m.get("camera_id"),
+                "battery_level": m.get("battery_level"),
             }
 
     return result
