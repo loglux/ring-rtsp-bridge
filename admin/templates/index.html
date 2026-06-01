@@ -94,20 +94,23 @@
                 </span>
               </div>
               <p class="text-base font-bold" x-text="name"></p>
-              <!-- Motion trigger info for battery cameras -->
-              <p x-show="meta.battery && !meta.active"
-                 class="text-xs text-zinc-400 mt-0.5">Waiting for motion…</p>
             </div>
             <!-- Live toggle -->
-            <button @click="toggleLive(name, meta.battery)"
+            <button @click="toggleLive(name)"
                     :disabled="togglingLive===name"
                     class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex-shrink-0"
                     :class="meta.active
                       ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600'
                       : 'bg-zinc-100 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700'">
               <span class="w-1.5 h-1.5 rounded-full"
-                    :class="meta.active ? 'bg-emerald-400' : 'bg-zinc-400'"></span>
-              <span x-show="togglingLive!==name" x-text="meta.active ? 'Live' : 'Paused'"></span>
+                    :class="(meta.battery && meta.active && !cameraStats[name]?.camera_fps)
+                              ? 'bg-amber-400 animate-pulse'
+                              : meta.active ? 'bg-emerald-400' : 'bg-zinc-400'"></span>
+              <span x-show="togglingLive!==name"
+                    x-text="!meta.active ? 'Paused'
+                           : (meta.battery && !cameraStats[name]?.camera_fps) ? 'Ready'
+                           : (meta.battery) ? 'Recording'
+                           : 'Live'"></span>
               <span x-show="togglingLive===name">…</span>
             </button>
           </div>
