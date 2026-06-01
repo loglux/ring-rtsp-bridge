@@ -371,28 +371,23 @@ async def api_camera_live(camera: str, request: Request):
     meta     = read_camera_meta()
     cam_meta = meta.get(camera, {})
 
-    if cam_meta.get("battery"):
-        # Battery camera: add/remove from Frigate on explicit user request
-        if enabled:
-            _enable_battery_camera(camera)
-        else:
-            # Cancel any pending auto-disable timer, then disable now
-            with _timer_lock:
-                t = _motion_timers.pop(camera, None)
-                if t:
-                    t.cancel()
-            _disable_battery_camera(camera)
-    else:
-        # Wired camera: toggle via Frigate API, no restart
-        async with httpx.AsyncClient() as client:
-            await client.post(f"{FRIGATE_API}/api/{camera}/detect",
-                              json={"enabled": enabled}, timeout=5)
-            await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
-                              json={"enabled": enabled}, timeout=5)
-        meta = read_camera_meta()
-        if camera in meta:
-            meta[camera]["active"] = enabled
-            write_camera_meta(meta)
+    # Cancel any pending auto-disable timer
+    if not enabled:
+        with _timer_lock:
+            t = _motion_timers.pop(camera, None)
+            if t:
+                t.cancel()
+
+    # All cameras: toggle via Frigate API — no config change, no restart
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{FRIGATE_API}/api/{camera}/detect",
+                          json={"enabled": enabled}, timeout=5)
+        await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
+                          json={"enabled": enabled}, timeout=5)
+    meta = read_camera_meta()
+    if camera in meta:
+        meta[camera]["active"] = enabled
+        write_camera_meta(meta)
 
     return {"ok": True, "camera": camera, "enabled": enabled}
 
@@ -461,10 +456,12 @@ async def api_save_credentials(request: Request):
 
 
 # ── MQTT listener ─────────────────────────────────────────────────────────────
-# Battery cameras:
-#   motion ON  → add to Frigate (_live stream) → Frigate records
-#   motion OFF → remove from Frigate after record_seconds → Ring sleeps, battery saved
-# Live view is only activated by explicit user action (not automatically).
+# Battery cameras stay IN Frigate config permanently (removing them causes Frigate
+# to delete their recordings). On motion we toggle detect+record via Frigate API
+# — no config change, no Frigate restart, no recording loss.
+#
+#   motion ON  → enable detect+record via Frigate API
+#   motion OFF → disable detect+record after record_seconds via Frigate API
 
 logger = logging.getLogger("ring_admin")
 logging.basicConfig(level=logging.INFO)
@@ -484,43 +481,19 @@ def _camera_name_for_id(camera_id: str) -> str | None:
     return None
 
 
-def _enable_battery_camera(cam_name: str):
-    meta = read_camera_meta()
-    m    = meta.get(cam_name, {})
-    if not m.get("battery") or m.get("active"):
-        return
-    cfg = m.get("config")
-    if not cfg:
-        return
-    fcfg = read_frigate_config()
-    fcfg.setdefault("cameras", {})[cam_name] = cfg
-    m["active"] = True
-    meta[cam_name] = m
-    write_camera_meta(meta)
-    write_frigate_config(fcfg)
+def _frigate_set_recording(cam_name: str, enabled: bool):
+    """Toggle detect + record for a camera via Frigate API. No restart needed."""
     try:
-        restart_container("frigate")
-        logger.info("Motion: enabled %s in Frigate", cam_name)
+        with httpx.Client(timeout=5) as client:
+            client.post(f"{FRIGATE_API}/api/{cam_name}/detect",    json={"enabled": enabled})
+            client.post(f"{FRIGATE_API}/api/{cam_name}/recordings", json={"enabled": enabled})
+        meta = read_camera_meta()
+        if cam_name in meta:
+            meta[cam_name]["active"] = enabled
+            write_camera_meta(meta)
+        logger.info("Recording %s for %s", "ON" if enabled else "OFF", cam_name)
     except Exception as e:
-        logger.warning("Motion: could not restart Frigate: %s", e)
-
-
-def _disable_battery_camera(cam_name: str):
-    meta = read_camera_meta()
-    m    = meta.get(cam_name, {})
-    if not m.get("battery") or not m.get("active"):
-        return
-    fcfg = read_frigate_config()
-    fcfg.get("cameras", {}).pop(cam_name, None)
-    m["active"] = False
-    meta[cam_name] = m
-    write_camera_meta(meta)
-    write_frigate_config(fcfg)
-    try:
-        restart_container("frigate")
-        logger.info("Motion: disabled %s in Frigate", cam_name)
-    except Exception as e:
-        logger.warning("Motion: could not restart Frigate: %s", e)
+        logger.warning("Could not toggle recording for %s: %s", cam_name, e)
 
 
 def _schedule_disable(cam_name: str, seconds: int):
@@ -528,7 +501,7 @@ def _schedule_disable(cam_name: str, seconds: int):
         old = _motion_timers.get(cam_name)
         if old:
             old.cancel()
-        t = threading.Timer(seconds, _disable_battery_camera, args=[cam_name])
+        t = threading.Timer(seconds, _frigate_set_recording, args=[cam_name, False])
         t.daemon = True
         t.start()
         _motion_timers[cam_name] = t
@@ -567,12 +540,12 @@ def _on_mqtt_message(client, userdata, msg):
         cam_meta = meta.get(cam_name, {})
         record_seconds = cam_meta.get("record_seconds", 60)
         if payload.upper() == "ON":
-            logger.info("Motion ON — %s", cam_name)
+            logger.info("Motion ON — %s, recording for %ds", cam_name, record_seconds)
             _record_motion_event(cam_name)
-            _enable_battery_camera(cam_name)
+            _frigate_set_recording(cam_name, True)
             _schedule_disable(cam_name, record_seconds)
         elif payload.upper() == "OFF":
-            logger.info("Motion OFF — %s, will stop in %ds", cam_name, record_seconds)
+            logger.info("Motion OFF — %s, stopping in %ds", cam_name, record_seconds)
             _schedule_disable(cam_name, record_seconds)
         return
 
