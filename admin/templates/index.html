@@ -145,17 +145,41 @@
               </div>
             </div>
 
-            <!-- battery idle -->
+            <!-- battery idle (in Frigate, waiting for stream) -->
             <div x-show="meta.battery && meta.active && !cameraStats[name]?.camera_fps"
                  class="flex items-center justify-center gap-2 py-3 bg-amber-50 rounded-xl">
               <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"></span>
-              <span class="text-xs text-amber-700 font-medium">Waiting for motion</span>
+              <span class="text-xs text-amber-700 font-medium">Recording on next motion</span>
             </div>
 
-            <!-- paused -->
-            <div x-show="!meta.active"
+            <!-- battery off (not in Frigate) -->
+            <div x-show="meta.battery && !meta.active"
+                 class="flex items-center justify-center gap-2 py-3 bg-zinc-50 rounded-xl">
+              <span class="text-xs text-zinc-400">Idle — activates automatically on motion</span>
+            </div>
+
+            <!-- wired paused -->
+            <div x-show="!meta.battery && !meta.active"
                  class="flex items-center justify-center gap-2 py-3 bg-zinc-50 rounded-xl">
               <span class="text-xs text-zinc-400">Detection paused</span>
+            </div>
+
+            <!-- event stats for battery cameras -->
+            <div x-show="meta.battery && (meta.last_motion || meta.events?.count_today)"
+                 class="mt-3 pt-3 border-t border-zinc-100 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p class="text-base font-bold text-zinc-700" x-text="meta.events?.count_today || 0"></p>
+                <p class="text-[10px] text-zinc-400">events today</p>
+              </div>
+              <div>
+                <p class="text-base font-bold text-zinc-700"
+                   x-text="meta.last_motion ? meta.last_motion.slice(11,16) : '—'"></p>
+                <p class="text-[10px] text-zinc-400">last motion</p>
+              </div>
+              <div>
+                <p class="text-base font-bold text-zinc-700" x-text="(meta.record_seconds || 60) + 's'"></p>
+                <p class="text-[10px] text-zinc-400">record time</p>
+              </div>
             </div>
           </div>
         </div>
