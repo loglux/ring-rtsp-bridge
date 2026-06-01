@@ -128,6 +128,35 @@ def frigate_stats() -> dict:
     except Exception:
         return {}
 
+def frigate_events_today() -> dict:
+    """Return per-camera per-label event counts for today + last event timestamp.
+
+    Result: {cam_name: {label: count, ..., "last_event": float|None}}
+    """
+    import datetime
+    midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    after = int(midnight.timestamp())
+    try:
+        r = httpx.get(
+            f"{FRIGATE_API}/api/events",
+            params={"after": after, "include_thumbnails": "0", "limit": 2000},
+            timeout=5,
+        )
+        events = r.json()
+    except Exception:
+        return {}
+
+    result: dict = {}
+    for ev in events:
+        cam   = ev.get("camera", "")
+        label = ev.get("label", "unknown")
+        ts    = ev.get("end_time") or ev.get("start_time")
+        entry = result.setdefault(cam, {"last_event": None})
+        entry[label] = entry.get(label, 0) + 1
+        if ts and (entry["last_event"] is None or ts > entry["last_event"]):
+            entry["last_event"] = ts
+    return result
+
 def container_logs(service_key: str, lines: int = 60) -> str:
     name = SERVICES.get(service_key, "")
     try:
@@ -204,16 +233,18 @@ async def index(request: Request):
     stats    = frigate_stats()
     ring_cfg = read_ring_config()
     disc     = discovered_cameras()
-    frigate_url = f"http://{request.url.hostname}:5000"
+    frigate_url  = f"http://{request.url.hostname}:5000"
+    events_today = frigate_events_today()
     return templates.TemplateResponse(request, "index.html", {
-        "statuses":    statuses,
-        "stats":       stats,
-        "fcfg":        fcfg,
-        "cameras":     cameras,
-        "ring_cfg":    ring_cfg,
-        "disc":        disc,
-        "all_objects": ALL_OBJECTS,
-        "frigate_url": frigate_url,
+        "statuses":     statuses,
+        "stats":        stats,
+        "fcfg":         fcfg,
+        "cameras":      cameras,
+        "ring_cfg":     ring_cfg,
+        "disc":         disc,
+        "all_objects":  ALL_OBJECTS,
+        "frigate_url":  frigate_url,
+        "events_today": events_today,
     })
 
 @app.get("/setup", response_class=HTMLResponse)
@@ -230,10 +261,12 @@ async def setup(request: Request):
 
 @app.get("/api/status")
 async def api_status():
-    statuses = {k: container_status(v) for k, v in SERVICES.items()}
-    stats    = frigate_stats()
-    cameras  = all_known_cameras()
-    return {"services": statuses, "frigate_stats": stats, "cameras": cameras}
+    statuses     = {k: container_status(v) for k, v in SERVICES.items()}
+    stats        = frigate_stats()
+    cameras      = all_known_cameras()
+    events_today = frigate_events_today()
+    return {"services": statuses, "frigate_stats": stats, "cameras": cameras,
+            "events_today": events_today}
 
 
 # ── API: ring connection ──────────────────────────────────────────────────────
