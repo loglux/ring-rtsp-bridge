@@ -549,29 +549,41 @@ def _on_mqtt_message(client, userdata, msg):
 
     # ring/<location>/<...>/camera/<camera_id>/motion/state
     m = re.search(r"/camera/([^/]+)/motion/state$", topic)
-    if not m:
+    if m:
+        camera_id = m.group(1)
+        cam_name  = _camera_name_for_id(camera_id)
+        if not cam_name:
+            return
+        meta     = read_camera_meta()
+        cam_meta = meta.get(cam_name, {})
+        if not cam_meta.get("motion_trigger", True):
+            return
+        record_seconds = cam_meta.get("record_seconds", 60)
+        if payload.upper() == "ON":
+            logger.info("Motion ON for %s — enabling stream", cam_name)
+            _enable_battery_camera(cam_name)
+            _schedule_disable(cam_name, record_seconds)
+        elif payload.upper() == "OFF":
+            logger.info("Motion OFF for %s — will disable in %ds", cam_name, record_seconds)
+            _schedule_disable(cam_name, record_seconds)
         return
 
-    camera_id = m.group(1)
-    cam_name  = _camera_name_for_id(camera_id)
-    if not cam_name:
-        return
-
-    meta     = read_camera_meta()
-    cam_meta = meta.get(cam_name, {})
-    if not cam_meta.get("motion_trigger", True):
-        return  # motion trigger disabled for this camera
-
-    record_seconds = cam_meta.get("record_seconds", 60)
-
-    if payload.upper() == "ON":
-        logger.info("Motion ON for %s (camera_id=%s) — enabling stream", cam_name, camera_id)
-        _enable_battery_camera(cam_name)
-        _schedule_disable(cam_name, record_seconds)
-    elif payload.upper() == "OFF":
-        # Extend the timer: keep recording for record_seconds after motion stops
-        logger.info("Motion OFF for %s — will disable in %ds", cam_name, record_seconds)
-        _schedule_disable(cam_name, record_seconds)
+    # ring/<location>/<...>/camera/<camera_id>/battery/state
+    m = re.search(r"/camera/([^/]+)/battery/state$", topic)
+    if m:
+        camera_id = m.group(1)
+        cam_name  = _camera_name_for_id(camera_id)
+        if not cam_name:
+            return
+        try:
+            level = int(float(payload))
+        except ValueError:
+            return
+        meta = read_camera_meta()
+        if cam_name in meta and meta[cam_name].get("battery_level") != level:
+            meta[cam_name]["battery_level"] = level
+            write_camera_meta(meta)
+            logger.info("Battery level for %s: %d%%", cam_name, level)
 
 
 def _start_mqtt_listener():

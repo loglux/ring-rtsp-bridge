@@ -82,10 +82,15 @@
             <div>
               <div class="flex items-center gap-2 mb-0.5">
                 <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">Camera</p>
-                <!-- Battery badge -->
+                <!-- Battery badge with charge level -->
                 <span x-show="meta.battery"
-                      class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">
-                  🔋 battery
+                      class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      :class="meta.battery_level == null ? 'bg-amber-50 text-amber-600'
+                        : meta.battery_level > 50 ? 'bg-emerald-50 text-emerald-700'
+                        : meta.battery_level > 20 ? 'bg-amber-50 text-amber-600'
+                        : 'bg-red-50 text-red-600'">
+                  🔋
+                  <span x-text="meta.battery_level != null ? meta.battery_level + '%' : 'battery'"></span>
                 </span>
               </div>
               <p class="text-base font-bold" x-text="name"></p>
