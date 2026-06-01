@@ -296,7 +296,7 @@
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 border"
                  :class="svc.status==='running' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'">
-              <span x-text="key==='mosquitto' ? '📡' : key==='ring-mqtt' ? '💍' : '🎬'"></span>
+              <span x-text="key==='mosquitto' ? '📡' : key==='ring-mqtt' ? '🔔' : '🎬'"></span>
             </div>
             <div class="min-w-0">
               <p class="font-mono text-sm font-semibold truncate text-zinc-100" x-text="key"></p>
