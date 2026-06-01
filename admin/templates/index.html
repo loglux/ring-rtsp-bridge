@@ -164,21 +164,31 @@
               <span class="text-xs text-zinc-400">Detection paused</span>
             </div>
 
-            <!-- event stats for battery cameras -->
-            <div x-show="meta.battery && (meta.last_motion || meta.events?.count_today)"
-                 class="mt-3 pt-3 border-t border-zinc-100 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <p class="text-base font-bold text-zinc-700" x-text="meta.events?.count_today || 0"></p>
-                <p class="text-[10px] text-zinc-400">events today</p>
+            <!-- battery camera settings + stats -->
+            <div x-show="meta.battery"
+                 class="mt-3 pt-3 border-t border-zinc-100 space-y-2">
+              <!-- event stats row -->
+              <div class="grid grid-cols-2 gap-2 text-center">
+                <div class="bg-zinc-50 rounded-xl py-2">
+                  <p class="text-base font-bold text-zinc-700" x-text="meta.events?.count_today || 0"></p>
+                  <p class="text-[10px] text-zinc-400">events today</p>
+                </div>
+                <div class="bg-zinc-50 rounded-xl py-2">
+                  <p class="text-base font-bold text-zinc-700"
+                     x-text="meta.last_motion ? meta.last_motion.slice(11,16) : '—'"></p>
+                  <p class="text-[10px] text-zinc-400">last motion</p>
+                </div>
               </div>
-              <div>
-                <p class="text-base font-bold text-zinc-700"
-                   x-text="meta.last_motion ? meta.last_motion.slice(11,16) : '—'"></p>
-                <p class="text-[10px] text-zinc-400">last motion</p>
-              </div>
-              <div>
-                <p class="text-base font-bold text-zinc-700" x-text="(meta.record_seconds || 60) + 's'"></p>
-                <p class="text-[10px] text-zinc-400">record time</p>
+              <!-- record time setting -->
+              <div class="flex items-center justify-between px-1">
+                <span class="text-xs text-zinc-500">Record time after motion</span>
+                <div class="flex items-center gap-1.5">
+                  <input type="number" min="30" max="600" step="30"
+                         :value="meta.record_seconds || 120"
+                         @change="saveRecordSeconds(name, $event.target.value)"
+                         class="w-16 text-xs px-2 py-1 border border-zinc-200 rounded-lg text-center bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
+                  <span class="text-xs text-zinc-400">sec</span>
+                </div>
               </div>
             </div>
           </div>
@@ -687,6 +697,16 @@ function app() {
       await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
       this.saving=false; this.saved='credentials';
+    },
+
+    async saveRecordSeconds(camName, value) {
+      const secs = Math.max(30, Math.min(600, parseInt(value) || 120));
+      await fetch('/api/camera/' + camName + '/record-seconds', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({seconds: secs}),
+      });
+      if (this.allCameras[camName])
+        this.allCameras[camName] = {...this.allCameras[camName], record_seconds: secs};
     },
 
     async showLogs(service) { this.logsService=service; this.setTab('logs'); await this.fetchLogs(); },

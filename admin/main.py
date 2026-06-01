@@ -443,6 +443,20 @@ async def api_save_retention(request: Request):
     return {"ok": True}
 
 
+# ── API: camera settings ─────────────────────────────────────────────────────
+
+@app.post("/api/camera/{camera}/record-seconds")
+async def api_set_record_seconds(camera: str, request: Request):
+    data = await request.json()
+    seconds = max(30, min(600, int(data.get("seconds", 120))))
+    meta = read_camera_meta()
+    if camera not in meta:
+        return JSONResponse({"error": "camera not found"}, status_code=404)
+    meta[camera]["record_seconds"] = seconds
+    write_camera_meta(meta)
+    return {"ok": True, "camera": camera, "record_seconds": seconds}
+
+
 # ── API: credentials ──────────────────────────────────────────────────────────
 
 @app.post("/api/credentials")
