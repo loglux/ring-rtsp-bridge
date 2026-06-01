@@ -587,8 +587,7 @@ function app() {
       const fd = new FormData();
       fd.append('camera_id', id); fd.append('camera_name', name);
       await fetch('/api/cameras/add',{method:'POST',body:fd});
-      this.activeCameras.push(name);
-      this.allCameras[name] = {battery:true, active:true, camera_id:id, config:{}};
+      this.allCameras[name] = {battery:true, active:false, camera_id:id, config:{}};
       delete this.newCameraNames[id];
     },
 

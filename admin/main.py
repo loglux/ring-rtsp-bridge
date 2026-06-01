@@ -266,19 +266,11 @@ async def api_cameras():
 
 @app.post("/api/cameras/add")
 async def api_add_ring_camera(camera_id: str = Form(...), camera_name: str = Form(...)):
-    """Add a Ring camera — marked as battery, stored in meta, added to Frigate."""
+    """Add a Ring battery camera — starts paused, activated only by motion trigger."""
     cfg = ring_camera_config(camera_id)
-
-    # Save to meta (battery=True, template for future toggling)
     meta = read_camera_meta()
-    meta[camera_name] = {"battery": True, "active": True, "camera_id": camera_id, "config": cfg}
+    meta[camera_name] = {"battery": True, "active": False, "camera_id": camera_id, "config": cfg}
     write_camera_meta(meta)
-
-    # Add to Frigate config
-    fcfg = read_frigate_config()
-    fcfg.setdefault("cameras", {})[camera_name] = cfg
-    write_frigate_config(fcfg)
-    restart_container("frigate")
     return {"ok": True}
 
 
