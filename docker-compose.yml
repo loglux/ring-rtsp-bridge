@@ -24,7 +24,7 @@ services:
       start_period: 10s
 
   ring-mqtt:
-    image: tsightler/ring-mqtt
+    image: tsightler/ring-mqtt:5.9.3
     container_name: ring-rtsp-bridge
     restart: unless-stopped
     depends_on:
@@ -47,7 +47,7 @@ services:
         max-file: "3"
 
   frigate:
-    image: ghcr.io/blakeblackshear/frigate:stable
+    image: ghcr.io/blakeblackshear/frigate:stable@sha256:1724960349dad0bd2ae8ec884171a6fd5755a4dc242a0e66cadbda9c0e85c99b
     container_name: ring-frigate
     restart: unless-stopped
     depends_on:
