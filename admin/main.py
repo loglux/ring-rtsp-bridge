@@ -77,6 +77,7 @@ async def _auth_guard(request: Request, call_next):
     return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
 
 RING_CONFIG_PATH    = Path("/ring-mqtt-data/config.json")
+RING_STATE_PATH     = Path("/ring-mqtt-data/ring-state.json")
 GO2RTC_PATH         = Path("/ring-mqtt-data/go2rtc.yaml")
 FRIGATE_CONFIG_PATH = Path("/frigate-config/config.yaml")
 CAMERA_META_PATH    = Path("/frigate-config/camera_meta.json")
@@ -376,18 +377,45 @@ async def api_status():
 @app.get("/api/ring-status")
 async def api_ring_status():
     svc = container_status(SERVICES["ring-mqtt"])
+
+    # Check for saved Ring auth token
+    has_token = False
+    token_error = False
+    try:
+        state = json.loads(RING_STATE_PATH.read_text())
+        has_token = bool(state.get("ring_token") or state.get("refreshToken"))
+    except Exception:
+        pass
+
     if svc["status"] != "running":
-        return {"connected": False, "cameras": 0, "status": svc["status"]}
+        return {"connected": False, "has_token": has_token,
+                "token_error": False, "cameras": 0, "status": svc["status"]}
+
     cams = discovered_cameras()
     connected = len(cams) > 0
-    if not connected:
-        try:
-            c = docker_client().containers.get(SERVICES["ring-mqtt"])
-            logs = c.logs(tail=50).decode("utf-8", errors="replace")
+
+    try:
+        c = docker_client().containers.get(SERVICES["ring-mqtt"])
+        logs = c.logs(tail=100).decode("utf-8", errors="replace")
+        if not connected:
             connected = "Successfully established connection to Ring API" in logs
-        except Exception:
-            pass
-    return {"connected": connected, "cameras": len(cams), "status": svc["status"]}
+        # Detect token errors (expired / revoked)
+        token_error = has_token and any(
+            phrase in logs for phrase in [
+                "Failed to refresh token", "401", "invalid_token",
+                "Token is not valid", "not authorized",
+            ]
+        )
+    except Exception:
+        pass
+
+    return {
+        "connected":   connected,
+        "has_token":   has_token,
+        "token_error": token_error,
+        "cameras":     len(cams),
+        "status":      svc["status"],
+    }
 
 
 # ── API: restart ──────────────────────────────────────────────────────────────

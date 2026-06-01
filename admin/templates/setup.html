@@ -172,8 +172,41 @@
       <!-- ═══ STEP 2: Ring Auth ════════════════════════════════════ -->
       <div x-show="step === 2" x-cloak>
 
-        <!-- Not connected yet -->
-        <div x-show="!ringConnected">
+        <!-- Token error — need re-auth -->
+        <div x-show="ringTokenError">
+          <div class="flex items-center gap-4 p-4 bg-red-50 border border-red-200 rounded-xl mb-5">
+            <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+              <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-red-700">Ring token expired or revoked</p>
+              <p class="text-xs text-red-500 mt-0.5">You need to re-authenticate with Ring</p>
+            </div>
+          </div>
+          <button @click="openRingAuth()"
+                  class="w-full flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium text-sm">
+            Re-authenticate with Ring →
+          </button>
+        </div>
+
+        <!-- Has token, waiting to connect -->
+        <div x-show="!ringConnected && ringHasToken && !ringTokenError">
+          <div class="flex items-center gap-4 p-4 bg-sky-50 border border-sky-200 rounded-xl mb-5">
+            <svg class="w-5 h-5 text-brand spinner flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            <div>
+              <p class="text-sm font-semibold text-sky-800">Ring token found — connecting…</p>
+              <p class="text-xs text-sky-600 mt-0.5">ring-mqtt is reconnecting to Ring automatically</p>
+            </div>
+          </div>
+          <p class="text-xs text-zinc-400 text-center">Checking every 3 seconds…</p>
+        </div>
+
+        <!-- No token — need fresh auth -->
+        <div x-show="!ringConnected && !ringHasToken && !ringTokenError">
           <div class="flex items-center gap-4 p-4 bg-zinc-50 rounded-xl mb-5">
             <div class="w-10 h-10 rounded-full bg-zinc-200 flex items-center justify-center flex-shrink-0">
               <svg class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -182,7 +215,7 @@
             </div>
             <div>
               <p class="text-sm font-medium text-zinc-700">ring-mqtt: <span class="text-zinc-400" x-text="ringMqttStatus"></span></p>
-              <p class="text-xs text-zinc-400 mt-0.5">Waiting for Ring account connection</p>
+              <p class="text-xs text-zinc-400 mt-0.5">No Ring account connected yet</p>
             </div>
           </div>
 
@@ -205,7 +238,7 @@
             </svg>
             Checking connection every 3 seconds…
           </div>
-        </div>
+        </div><!-- /no token -->
 
         <!-- Connected! -->
         <div x-show="ringConnected" x-cloak>
@@ -492,6 +525,8 @@ function wizard() {
 
     // step 2
     ringConnected: false,
+    ringHasToken: false,
+    ringTokenError: false,
     ringSkipped: false,
     ringMqttStatus: 'checking…',
     ringCameraCount: 0,
@@ -558,8 +593,13 @@ function wizard() {
       if (!this.canNext()) return;
       if (this.step === 2) this.refreshDiscovered();
       this.step++;
-      if (this.step === 2) this.startRingPoll();
-      else this.stopRingPoll();
+      if (this.step === 2) {
+        this.startRingPoll();
+        // already connected before reaching step → auto-advance
+        if (this.ringConnected) setTimeout(() => { this.refreshDiscovered(); this.step = 3; }, 800);
+      } else {
+        this.stopRingPoll();
+      }
     },
 
     prevStep() {
@@ -597,12 +637,13 @@ function wizard() {
       try {
         const r = await fetch('/api/ring-status');
         const d = await r.json();
-        this.ringMqttStatus = d.status;
+        this.ringMqttStatus  = d.status;
         this.ringCameraCount = d.cameras;
+        this.ringHasToken    = d.has_token  ?? false;
+        this.ringTokenError  = d.token_error ?? false;
         if (d.connected && !this.ringConnected) {
           this.ringConnected = true;
           this.stopRingPoll();
-          // auto-advance after 1.5s so user sees the success state
           if (this.step === 2) {
             setTimeout(() => { this.refreshDiscovered(); this.step = 3; }, 1500);
           }
