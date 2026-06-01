@@ -630,7 +630,10 @@ def _on_mqtt_message(client, userdata, msg):
         if payload.upper() == "ON":
             logger.info("%s ON — %s, recording for %ds", event_type.capitalize(), cam_name, record_seconds)
             _record_motion_event(cam_name)
-            _frigate_set_camera_enabled(cam_name, True)
+            # Only restart Frigate if camera is currently disabled — avoid unnecessary restarts
+            meta2 = read_camera_meta()
+            if not meta2.get(cam_name, {}).get("active"):
+                _frigate_set_camera_enabled(cam_name, True)
             _schedule_disable(cam_name, record_seconds)
         elif payload.upper() == "OFF" and event_type == "motion":
             logger.info("Motion OFF — %s, stopping in %ds", cam_name, record_seconds)
