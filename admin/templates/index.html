@@ -581,7 +581,7 @@ function app() {
     cameraOverrideEnabled: {},
     cameraObjects: {},
 
-    continuousDays: {{ (fcfg.get('record',{}).get('continuous',{}).get('days',1)) }},
+    continuousDays: {{ (fcfg.get('record',{}).get('continuous',{}).get('days',0)) }},
     motionDays:     {{ (fcfg.get('record',{}).get('motion',{}).get('days',7)) }},
     alertDays:      {{ (fcfg.get('record',{}).get('alerts',{}).get('retain',{}).get('days',30)) }},
     detectionDays:  {{ (fcfg.get('record',{}).get('detections',{}).get('retain',{}).get('days',14)) }},
@@ -695,28 +695,35 @@ function app() {
     },
     async saveDetection() {
       this.saving=true;
-      const perCamera={};
-      for (const cam of this.activeCameras)
-        perCamera[cam] = this.cameraOverrideEnabled[cam] ? (this.cameraObjects[cam]||[]) : null;
-      await fetch('/api/detection', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({global_objects:this.trackedObjects, per_camera:perCamera})});
-      this.saving=false; this.saved='detection';
-      setTimeout(()=>this.saved=null, 5000);
+      try {
+        const perCamera={};
+        for (const cam of this.activeCameras)
+          perCamera[cam] = this.cameraOverrideEnabled[cam] ? (this.cameraObjects[cam]||[]) : null;
+        await fetch('/api/detection', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({global_objects:this.trackedObjects, per_camera:perCamera})});
+        this.saved='detection';
+        setTimeout(()=>this.saved=null, 5000);
+      } finally { this.saving=false; }
     },
 
     async saveRetention() {
       this.saving=true;
-      await fetch('/api/retention', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({continuous_days:this.continuousDays, motion_days:this.motionDays, alerts_days:this.alertDays, detections_days:this.detectionDays})});
-      this.saving=false; this.saved='retention';
-      setTimeout(()=>this.saved=null, 5000);
+      try {
+        await fetch('/api/retention', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({continuous_days:this.continuousDays, motion_days:this.motionDays, alerts_days:this.alertDays, detections_days:this.detectionDays})});
+        this.saved='retention';
+        setTimeout(()=>this.saved=null, 5000);
+      } finally { this.saving=false; }
     },
 
     async saveCredentials() {
       this.saving=true;
-      await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
-      this.saving=false; this.saved='credentials';
+      try {
+        await fetch('/api/credentials', {method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({user:this.rtspUser, pass:this.rtspPass})});
+        this.saved='credentials';
+        setTimeout(()=>this.saved=null, 8000);
+      } finally { this.saving=false; }
     },
 
     async saveRecordSeconds(camName, value) {

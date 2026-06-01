@@ -172,7 +172,7 @@ def all_known_cameras() -> dict:
             "battery_level":  m.get("battery_level"),
             "last_motion":    m.get("last_motion"),
             "events":         m.get("events", {}),
-            "record_seconds": m.get("record_seconds", 60),
+            "record_seconds": m.get("record_seconds", 120),
         }
 
     # Inactive battery cameras (in meta but not in Frigate)
@@ -186,7 +186,7 @@ def all_known_cameras() -> dict:
                 "battery_level":  m.get("battery_level"),
                 "last_motion":    m.get("last_motion"),
                 "events":         m.get("events", {}),
-                "record_seconds": m.get("record_seconds", 60),
+                "record_seconds": m.get("record_seconds", 120),
             }
 
     return result
@@ -337,19 +337,20 @@ async def api_rename_camera(request: Request):
     if not old_name or not new_name:
         return JSONResponse({"error": "old_name and new_name required"}, status_code=400)
 
-    # Update meta
-    meta = read_camera_meta()
-    if old_name in meta:
-        meta[new_name] = meta.pop(old_name)
-        write_camera_meta(meta)
-
-    # Update Frigate config (only if camera is currently active)
+    # Validate before any writes
     fcfg    = read_frigate_config()
     cameras = fcfg.get("cameras", {})
     if old_name not in cameras:
         return JSONResponse({"error": f"Camera '{old_name}' not found in Frigate"}, status_code=404)
     if new_name in cameras:
         return JSONResponse({"error": f"Camera '{new_name}' already exists"}, status_code=400)
+
+    # Both checks passed — now write
+    meta = read_camera_meta()
+    if old_name in meta:
+        meta[new_name] = meta.pop(old_name)
+        write_camera_meta(meta)
+
     cameras[new_name] = cameras.pop(old_name)
     write_frigate_config(fcfg)
     restart_container("frigate")
@@ -588,7 +589,10 @@ def _frigate_set_camera_enabled(cam_name: str, enabled: bool):
     try:
         pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
-        pub.publish(f"frigate/{cam_name}/enabled/set", state, retain=False)
+        pub.loop_start()
+        info = pub.publish(f"frigate/{cam_name}/enabled/set", state, retain=False)
+        info.wait_for_publish(timeout=5)
+        pub.loop_stop()
         pub.disconnect()
 
         meta = read_camera_meta()
@@ -644,7 +648,7 @@ def _on_mqtt_message(client, userdata, msg):
             return
         meta     = read_camera_meta()
         cam_meta = meta.get(cam_name, {})
-        record_seconds = cam_meta.get("record_seconds", 60)
+        record_seconds = cam_meta.get("record_seconds", 120)
         if payload.upper() == "ON":
             logger.info("%s ON — %s, recording for %ds", event_type.capitalize(), cam_name, record_seconds)
             _record_motion_event(cam_name)

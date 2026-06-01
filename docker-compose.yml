@@ -71,6 +71,7 @@ services:
     volumes:
       - ring-mqtt-data:/ring-mqtt-data
       - frigate-config:/frigate-config
+      - frigate-clips:/media/frigate
       - /var/run/docker.sock:/var/run/docker.sock
     logging:
       options:
