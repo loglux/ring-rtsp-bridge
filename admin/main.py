@@ -20,7 +20,7 @@ RING_CONFIG_PATH    = Path("/ring-mqtt-data/config.json")
 GO2RTC_PATH         = Path("/ring-mqtt-data/go2rtc.yaml")
 FRIGATE_CONFIG_PATH = Path("/frigate-config/config.yaml")
 CAMERA_META_PATH    = Path("/frigate-config/camera_meta.json")
-FRIGATE_API         = "http://ring-frigate:5001"
+FRIGATE_API         = "http://ring-frigate:5000"
 
 SERVICES = {
     "mosquitto": "ring-rtsp-mosquitto",
