@@ -10,59 +10,111 @@
       theme: {
         extend: {
           colors: {
-            brand: { DEFAULT: '#6366f1', dark: '#4f46e5', light: '#e0e7ff' }
+            brand: { DEFAULT: '#38bdf8', dark: '#0ea5e9', light: '#7dd3fc' }
+          },
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
           }
         }
       }
     }
   </script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     [x-cloak]{display:none!important}
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif; }
-    .card { @apply bg-white rounded-2xl border border-zinc-100 shadow-sm; }
-    input:focus { outline: none; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
-    .section-title { @apply text-[11px] font-semibold uppercase tracking-widest text-zinc-400 mb-1; }
+    body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+    .card {
+      background: #1a1e2e;
+      border-radius: 1rem;
+      border: 1px solid rgba(255,255,255,0.09);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.6);
+    }
+    .section-title { @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 mb-1; }
     .section-sub   { @apply text-xs text-zinc-400 mb-4; }
+
+    /* Live / battery card glows */
+    .card-live    { border-color: rgba(56,189,248,0.28); box-shadow: 0 0 0 1px rgba(56,189,248,0.12), 0 4px 24px rgba(0,0,0,0.45), 0 0 32px rgba(56,189,248,0.08); }
+    .card-battery { border-color: rgba(245,158,11,0.28); box-shadow: 0 0 0 1px rgba(245,158,11,0.12), 0 4px 24px rgba(0,0,0,0.45), 0 0 32px rgba(245,158,11,0.08); }
+
+    /* Range slider — dark track, sky thumb */
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      height: 6px; border-radius: 9999px; background: #27272a; cursor: pointer; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 9999px;
+      background: #38bdf8; border: 2px solid #09090b;
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.25); cursor: pointer; transition: transform .15s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.12); }
+    input[type=range]::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 9999px;
+      background: #38bdf8; border: 2px solid #09090b;
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.25); cursor: pointer;
+    }
+    input[type=range]::-moz-range-track { height: 6px; border-radius: 9999px; background: #27272a; }
+
+    /* Input focus */
+    input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 2px rgba(56,189,248,0.25); }
+
+    /* Dark scrollbar (log + everywhere) */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #0f0f11; }
+    ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 9999px; border: 2px solid #0f0f11; }
+    ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+    .log-pre::-webkit-scrollbar-track { background: #000; }
+    .log-pre::-webkit-scrollbar-thumb { background: #1f3a2e; border: 2px solid #000; }
   </style>
 </head>
 
-<body class="bg-zinc-50 min-h-screen text-zinc-800" x-data="app()" x-init="init()">
+<body class="bg-[#09090b] min-h-screen text-zinc-100 antialiased selection:bg-sky-500/30" x-data="app()" x-init="init()">
 
 <!-- ══ HEADER ══════════════════════════════════════════════════════════════ -->
-<header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-zinc-200">
-  <div class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between gap-4">
-    <div class="flex items-center gap-2.5">
-      <div class="w-7 h-7 rounded-lg bg-brand flex items-center justify-center shadow">
-        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+<header class="sticky top-0 z-30 bg-[#09090b]/85 backdrop-blur-xl border-b border-zinc-800/80">
+  <div class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 flex items-center justify-center shadow-lg shadow-sky-500/20 ring-1 ring-sky-300/30">
+        <svg class="w-5 h-5 text-zinc-950" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.882v6.236a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
         </svg>
       </div>
-      <span class="font-semibold text-sm tracking-tight">Ring Bridge</span>
+      <div class="leading-tight">
+        <p class="font-mono font-bold text-sm tracking-tight text-zinc-100">RING<span class="text-sky-400">·</span>BRIDGE</p>
+        <p class="text-[10px] uppercase tracking-[0.22em] text-zinc-600 font-semibold">Surveillance Console</p>
+      </div>
     </div>
     <div class="flex items-center gap-2">
       <template x-for="(svc, key) in services" :key="key">
-        <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-              :class="svc.status==='running' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'">
-          <span class="w-1.5 h-1.5 rounded-full" :class="svc.status==='running' ? 'bg-emerald-400' : 'bg-red-400'"></span>
+        <span class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium font-mono tracking-tight border"
+              :class="svc.status==='running' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'">
+          <span class="w-1.5 h-1.5 rounded-full" :class="svc.status==='running' ? 'bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400/70' : 'bg-red-400'"></span>
           <span x-text="key"></span>
         </span>
       </template>
       <a href="{{ frigate_url }}" target="_blank"
-         class="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand text-white hover:bg-brand-dark transition-colors">
-        Frigate UI ↗
+         class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 hover:bg-sky-500/25 hover:text-sky-300 transition-colors">
+        Frigate UI <span class="text-[10px]">↗</span>
       </a>
     </div>
   </div>
 </header>
 
 <!-- ══ NAV TABS ════════════════════════════════════════════════════════════ -->
-<div class="max-w-6xl mx-auto px-5 mt-5">
-  <div class="flex gap-1 p-1 bg-zinc-100 rounded-xl w-fit mb-6 overflow-x-auto">
+<div class="max-w-6xl mx-auto px-5 mt-6">
+  <div class="flex gap-1 p-1 rounded-xl w-fit mb-6 overflow-x-auto" style="background:#111526;border:1px solid rgba(255,255,255,0.1)">
     <template x-for="tab in tabs" :key="tab.id">
       <button @click="setTab(tab.id)"
-              class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium rounded-lg transition-all whitespace-nowrap"
-              :class="activeTab===tab.id ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-800'">
+              class="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-semibold rounded-lg transition-all whitespace-nowrap border"
+              :class="activeTab===tab.id ? 'text-sky-400 border-transparent shadow-[inset_0_-2px_0_0_rgba(56,189,248,0.8)]' : 'text-zinc-400 hover:text-zinc-200 border-transparent'"
+              :style="activeTab===tab.id ? 'background:rgba(56,189,248,0.1)' : ''">
         <span x-text="tab.icon"></span>
         <span x-text="tab.label"></span>
       </button>
@@ -75,49 +127,53 @@
     <!-- Camera cards -->
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
       <template x-for="(meta, name) in allCameras" :key="name">
-        <div class="card overflow-hidden">
-          <div class="h-0.5"
-               :class="!meta.active ? 'bg-zinc-200'
-                 : (meta.battery && !cameraStats[name]?.camera_fps) ? 'bg-amber-300'
+        <div class="card overflow-hidden transition-shadow duration-300"
+             :class="meta.active && (!meta.battery || cameraStats[name]?.camera_fps) ? 'card-live'
+               : (meta.battery && meta.active) ? 'card-battery' : ''">
+          <!-- top status bar -->
+          <div class="h-[3px]"
+               :class="!meta.active ? 'bg-zinc-700'
+                 : (meta.battery && !cameraStats[name]?.camera_fps) ? 'bg-amber-400'
                  : (meta.battery && cameraStats[name]?.camera_fps)  ? 'bg-emerald-400'
-                 : 'bg-brand'">
+                 : 'bg-sky-400'">
           </div>
           <div class="p-5">
             <div class="flex items-start justify-between mb-4">
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                     :class="meta.battery ? 'bg-amber-50' : 'bg-indigo-50'">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 border"
+                     :class="meta.battery ? 'bg-amber-500/10 border-amber-500/20' : 'bg-sky-500/10 border-sky-500/20'">
                   <span x-text="meta.battery ? '🔔' : '📷'"></span>
                 </div>
-                <div>
-                  <p class="text-sm font-bold leading-snug" x-text="name"></p>
-                  <div x-show="meta.battery" class="flex items-center gap-1.5 mt-1">
-                    <div class="w-14 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                <div class="min-w-0">
+                  <p class="font-mono text-[15px] font-bold leading-snug text-zinc-100 truncate" x-text="name"></p>
+                  <div x-show="meta.battery" class="flex items-center gap-1.5 mt-1.5">
+                    <div class="w-16 h-2 bg-zinc-800 rounded-full overflow-hidden ring-1 ring-zinc-700/60">
                       <div class="h-full rounded-full transition-all duration-500"
                            :style="'width:' + (meta.battery_level ?? 0) + '%'"
-                           :class="(meta.battery_level ?? 0) > 50 ? 'bg-emerald-400'
-                             : (meta.battery_level ?? 0) > 20 ? 'bg-amber-400' : 'bg-red-400'">
+                           :class="(meta.battery_level ?? 0) > 50 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400'
+                             : (meta.battery_level ?? 0) > 20 ? 'bg-gradient-to-r from-amber-600 to-amber-400' : 'bg-gradient-to-r from-red-700 to-red-500'">
                       </div>
                     </div>
-                    <span class="text-[11px] font-medium"
-                          :class="(meta.battery_level ?? 0) > 50 ? 'text-emerald-600'
-                            : (meta.battery_level ?? 0) > 20 ? 'text-amber-600' : 'text-red-500'"
+                    <span class="text-[11px] font-semibold font-mono"
+                          :class="(meta.battery_level ?? 0) > 50 ? 'text-emerald-400'
+                            : (meta.battery_level ?? 0) > 20 ? 'text-amber-400' : 'text-red-400'"
                           x-text="meta.battery_level != null ? meta.battery_level + '%' : '—'">
                     </span>
                   </div>
                 </div>
               </div>
+              <!-- status badge / toggle -->
               <button @click="toggleLive(name)" :disabled="togglingLive===name"
-                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex-shrink-0 ml-2"
+                      class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide transition-all flex-shrink-0 ml-2 border"
                       :class="!meta.active
-                        ? 'bg-zinc-100 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700'
+                        ? 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30'
                         : (meta.battery && !cameraStats[name]?.camera_fps)
-                          ? 'bg-amber-50 text-amber-700 hover:bg-red-50 hover:text-red-600'
-                          : 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600'">
+                          ? 'bg-amber-500/15 text-amber-400 border-amber-500/25 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30'
+                          : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30'">
                 <span class="w-1.5 h-1.5 rounded-full"
-                      :class="!meta.active ? 'bg-zinc-400'
-                        : (meta.battery && !cameraStats[name]?.camera_fps) ? 'bg-amber-400 animate-pulse'
-                        : 'bg-emerald-400'">
+                      :class="!meta.active ? 'bg-zinc-500'
+                        : (meta.battery && !cameraStats[name]?.camera_fps) ? 'bg-amber-400 animate-pulse shadow-[0_0_6px] shadow-amber-400/70'
+                        : 'bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400/70'">
                 </span>
                 <span x-show="togglingLive!==name"
                       x-text="!meta.active ? 'Paused'
@@ -131,50 +187,51 @@
             <!-- fps grid — wired live or battery actively recording -->
             <div x-show="meta.active && (!meta.battery || cameraStats[name]?.camera_fps)"
                  class="grid grid-cols-3 gap-2 text-center">
-              <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.camera_fps||0).toFixed(1)"></p>
-                <p class="text-[10px] text-zinc-400 mt-0.5">cam fps</p>
+              <div class="bg-[#0d1020] rounded-xl py-3 border border-white/[0.07]">
+                <p class="text-xl font-bold font-mono text-sky-400 tabular-nums" x-text="(cameraStats[name]?.camera_fps||0).toFixed(1)"></p>
+                <p class="text-[9px] uppercase tracking-widest text-zinc-500 mt-0.5 font-semibold">cam fps</p>
               </div>
-              <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.detection_fps||0).toFixed(1)"></p>
-                <p class="text-[10px] text-zinc-400 mt-0.5">detect</p>
+              <div class="bg-[#0d1020] rounded-xl py-3 border border-white/[0.07]">
+                <p class="text-xl font-bold font-mono text-sky-400 tabular-nums" x-text="(cameraStats[name]?.detection_fps||0).toFixed(1)"></p>
+                <p class="text-[9px] uppercase tracking-widest text-zinc-500 mt-0.5 font-semibold">detect</p>
               </div>
-              <div class="bg-zinc-50 rounded-xl py-2.5">
-                <p class="text-base font-bold text-brand" x-text="(cameraStats[name]?.process_fps||0).toFixed(1)"></p>
-                <p class="text-[10px] text-zinc-400 mt-0.5">process</p>
+              <div class="bg-[#0d1020] rounded-xl py-3 border border-white/[0.07]">
+                <p class="text-xl font-bold font-mono text-sky-400 tabular-nums" x-text="(cameraStats[name]?.process_fps||0).toFixed(1)"></p>
+                <p class="text-[9px] uppercase tracking-widest text-zinc-500 mt-0.5 font-semibold">process</p>
               </div>
             </div>
 
             <!-- battery idle (in Frigate, waiting for stream) -->
             <div x-show="meta.battery && meta.active && !cameraStats[name]?.camera_fps"
-                 class="flex items-center justify-center gap-2 py-3 bg-amber-50 rounded-xl">
-              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0"></span>
-              <span class="text-xs text-amber-700 font-medium">Recording on next motion</span>
+                 class="flex items-center justify-center gap-2 py-3 bg-amber-500/[0.07] border border-amber-500/15 rounded-xl">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0 shadow-[0_0_6px] shadow-amber-400/70"></span>
+              <span class="text-xs text-amber-400 font-medium">Recording on next motion</span>
             </div>
 
             <!-- battery off (not in Frigate) -->
             <div x-show="meta.battery && !meta.active"
-                 class="flex items-center justify-center gap-2 py-3 bg-zinc-50 rounded-xl">
-              <span class="text-xs text-zinc-400">Idle — activates automatically on motion</span>
+                 class="flex items-center justify-center gap-2 py-3 bg-[#0d1020] border border-white/[0.06] rounded-xl">
+              <span class="text-xs text-zinc-500">Idle — activates automatically on motion</span>
             </div>
 
             <!-- wired paused -->
             <div x-show="!meta.battery && !meta.active"
-                 class="flex items-center justify-center gap-2 py-3 bg-zinc-50 rounded-xl">
-              <span class="text-xs text-zinc-400">Detection paused</span>
+                 class="flex items-center justify-center gap-2 py-3 bg-[#0d1020] border border-white/[0.06] rounded-xl">
+              <span class="text-xs text-zinc-500">Detection paused</span>
             </div>
 
             <!-- object event stats — all cameras -->
             <template x-if="objectCounts(name).length > 0">
-              <div class="mt-3 pt-3 border-t border-zinc-100">
+              <div class="mt-3 pt-3 border-t border-white/[0.08]">
                 <div class="flex flex-wrap items-center gap-1.5">
                   <template x-for="[label, count] in objectCounts(name)" :key="label">
-                    <div class="flex items-center gap-1 bg-zinc-50 rounded-xl px-2.5 py-1.5">
+                    <div class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold"
+                         :class="LABEL_BADGE[label] || 'bg-zinc-700/40 text-zinc-300'">
                       <span x-text="LABEL_EMOJI[label] || '📦'" class="text-sm leading-none"></span>
-                      <span class="text-xs font-bold text-zinc-700" x-text="count"></span>
+                      <span class="font-mono tabular-nums" x-text="count"></span>
                     </div>
                   </template>
-                  <span class="ml-auto text-[10px] text-zinc-400"
+                  <span class="ml-auto text-[10px] text-zinc-500 font-mono"
                         x-text="lastEventTime(name) ? 'last ' + lastEventTime(name) : ''"
                         x-show="lastEventTime(name)">
                   </span>
@@ -184,15 +241,15 @@
 
             <!-- battery camera: record time setting -->
             <div x-show="meta.battery"
-                 class="mt-2 pt-2 border-t border-zinc-100">
-              <div class="flex items-center justify-between px-1">
+                 class="mt-2 pt-2.5 border-t border-white/[0.08]">
+              <div class="flex items-center justify-between px-0.5">
                 <span class="text-xs text-zinc-500">Record time after motion</span>
                 <div class="flex items-center gap-1.5">
                   <input type="number" min="30" max="600" step="30"
                          :value="meta.record_seconds || 120"
                          @change="saveRecordSeconds(name, $event.target.value)"
-                         class="w-16 text-xs px-2 py-1 border border-zinc-200 rounded-lg text-center bg-white focus:outline-none focus:ring-2 focus:ring-brand/30">
-                  <span class="text-xs text-zinc-400">sec</span>
+                         class="w-16 text-xs px-2 py-1 border border-white/[0.12] rounded-lg text-center bg-[#09090b] text-zinc-200 font-mono focus:border-sky-500/40">
+                  <span class="text-xs text-zinc-500 font-mono">sec</span>
                 </div>
               </div>
             </div>
@@ -203,18 +260,18 @@
       <!-- Detector card -->
       <template x-for="(det, name) in detectorStats" :key="name">
         <div class="card overflow-hidden">
-          <div class="h-0.5 bg-brand/40"></div>
+          <div class="h-1 bg-sky-500/40"></div>
           <div class="p-5">
             <div class="flex items-center gap-3 mb-4">
-              <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl">🤖</div>
+              <div class="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-xl">🤖</div>
               <div>
-                <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">Detector</p>
-                <p class="text-sm font-bold" x-text="name"></p>
+                <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-500">Detector</p>
+                <p class="font-mono text-sm font-bold text-zinc-100" x-text="name"></p>
               </div>
             </div>
-            <div class="bg-zinc-50 rounded-xl py-3 text-center">
-              <p class="text-2xl font-bold text-brand" x-text="(det.inference_speed||0).toFixed(0)+'ms'"></p>
-              <p class="text-[10px] text-zinc-400 mt-1">inference / frame</p>
+            <div class="bg-[#0d1020] rounded-xl py-4 text-center border border-white/[0.07]">
+              <p class="text-3xl font-bold font-mono text-sky-400 tabular-nums" x-text="(det.inference_speed||0).toFixed(0)+'ms'"></p>
+              <p class="text-[9px] uppercase tracking-widest text-zinc-500 mt-1 font-semibold">inference / frame</p>
             </div>
           </div>
         </div>
@@ -226,25 +283,26 @@
       <template x-for="(svc, key) in services" :key="key">
         <div class="card p-4 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-8 h-8 rounded-lg flex items-center justify-center text-base flex-shrink-0"
-                 :class="svc.status==='running' ? 'bg-emerald-50' : 'bg-red-50'">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 border"
+                 :class="svc.status==='running' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'">
               <span x-text="key==='mosquitto' ? '📡' : key==='ring-mqtt' ? '💍' : '🎬'"></span>
             </div>
             <div class="min-w-0">
-              <p class="text-sm font-semibold truncate" x-text="key"></p>
-              <p class="text-[11px] font-medium"
-                 :class="svc.status==='running' ? 'text-emerald-600' : 'text-red-500'"
-                 x-text="svc.status">
+              <p class="font-mono text-sm font-semibold truncate text-zinc-100" x-text="key"></p>
+              <p class="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5"
+                 :class="svc.status==='running' ? 'text-emerald-400' : 'text-red-400'">
+                <span class="w-1.5 h-1.5 rounded-full" :class="svc.status==='running' ? 'bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400/70' : 'bg-red-400'"></span>
+                <span x-text="svc.status"></span>
               </p>
             </div>
           </div>
           <div class="flex gap-1.5 flex-shrink-0">
             <button @click="showLogs(key)"
-                    class="text-xs px-2.5 py-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:bg-zinc-50 transition-colors">
+                    class="text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.12] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
               Logs
             </button>
             <button @click="restart(key)" :disabled="restarting===key"
-                    class="text-xs px-2.5 py-1.5 rounded-lg bg-brand/10 text-brand hover:bg-brand/20 transition-colors disabled:opacity-50">
+                    class="text-xs px-2.5 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition-colors disabled:opacity-50">
               <span x-show="restarting!==key">↺</span>
               <span x-show="restarting===key">…</span>
             </button>
@@ -262,38 +320,38 @@
       <p class="section-sub">Cameras currently monitored by Frigate.</p>
       <div class="space-y-2" x-show="activeCameras.length>0">
         <template x-for="cam in activeCameras" :key="cam">
-          <div class="flex items-center gap-3 px-3 py-2.5 bg-zinc-50 rounded-xl"
+          <div class="flex items-center gap-3 px-3 py-2.5 bg-[#0d1020] border border-white/[0.06] rounded-xl"
                x-data="{renaming:false, newName:cam}">
             <span class="text-base flex-shrink-0"
                   x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
-            <span x-show="!renaming" class="text-sm font-medium flex-1 truncate" x-text="cam"></span>
+            <span x-show="!renaming" class="font-mono text-sm font-medium flex-1 truncate text-zinc-200" x-text="cam"></span>
             <input x-show="renaming" x-model="newName"
                    @keyup.enter="renameCamera(cam,newName);renaming=false"
                    @keyup.escape="renaming=false;newName=cam"
-                   class="text-sm px-2 py-1 border border-brand/40 rounded-lg flex-1 bg-white">
+                   class="text-sm px-2 py-1 border border-sky-500/40 rounded-lg flex-1 bg-[#09090b] text-zinc-200 font-mono">
             <div class="flex gap-1.5">
               <template x-if="!renaming">
                 <button @click="renaming=true;newName=cam"
-                        class="text-xs px-2.5 py-1.5 border border-zinc-200 rounded-lg text-zinc-500 hover:bg-zinc-100 transition-colors">
+                        class="text-xs px-2.5 py-1.5 border border-white/[0.12] rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
                   Rename
                 </button>
               </template>
               <template x-if="renaming">
                 <button @click="renameCamera(cam,newName);renaming=false"
                         :disabled="!newName||newName===cam"
-                        class="text-xs px-2.5 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40">
+                        class="text-xs px-2.5 py-1.5 bg-sky-500 text-zinc-950 font-semibold rounded-lg hover:bg-sky-400 transition-colors disabled:opacity-40">
                   Save
                 </button>
               </template>
               <template x-if="renaming">
                 <button @click="renaming=false;newName=cam"
-                        class="text-xs px-2.5 py-1.5 border border-zinc-200 rounded-lg text-zinc-500">
+                        class="text-xs px-2.5 py-1.5 border border-white/[0.12] rounded-lg text-zinc-400 hover:bg-zinc-800">
                   Cancel
                 </button>
               </template>
               <template x-if="!renaming">
                 <button @click="removeCamera(cam)"
-                        class="text-xs px-2.5 py-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors">
+                        class="text-xs px-2.5 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 transition-colors">
                   Remove
                 </button>
               </template>
@@ -301,7 +359,7 @@
           </div>
         </template>
       </div>
-      <p x-show="activeCameras.length===0" class="text-sm text-zinc-400 italic">No cameras configured yet</p>
+      <p x-show="activeCameras.length===0" class="text-sm text-zinc-500 italic">No cameras configured yet</p>
     </div>
 
     <div class="card p-5">
@@ -309,16 +367,16 @@
       <p class="section-sub">Any IP camera: Hikvision, Dahua, Reolink, Axis, etc. Works entirely without cloud.</p>
       <div class="flex flex-col sm:flex-row gap-3">
         <input x-model="newRtspName" placeholder="Name, e.g. backyard"
-               class="text-sm px-3 py-2 border border-zinc-200 rounded-xl w-full sm:w-44 bg-white">
+               class="text-sm px-3 py-2 border border-white/[0.12] rounded-xl w-full sm:w-44 bg-[#09090b] text-zinc-200 placeholder-zinc-600">
         <input x-model="newRtspUrl" placeholder="rtsp://user:pass@192.168.1.x/stream"
-               class="text-sm px-3 py-2 border border-zinc-200 rounded-xl flex-1 font-mono bg-white">
+               class="text-sm px-3 py-2 border border-white/[0.12] rounded-xl flex-1 font-mono bg-[#09090b] text-zinc-200 placeholder-zinc-600">
         <button @click="addRtspCamera()" :disabled="!newRtspName||!newRtspUrl||addingRtsp"
-                class="sm:w-auto px-5 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
+                class="sm:w-auto px-5 py-2 bg-sky-500 text-zinc-950 text-sm rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-40 font-semibold">
           <span x-show="!addingRtsp">Add camera</span>
           <span x-show="addingRtsp">Adding…</span>
         </button>
       </div>
-      <p x-show="rtspError" class="text-sm text-red-500 mt-2" x-text="rtspError"></p>
+      <p x-show="rtspError" class="text-sm text-red-400 mt-2" x-text="rtspError"></p>
     </div>
 
     <div class="card p-5">
@@ -326,24 +384,24 @@
       <p class="section-sub">Detected in your Ring account via ring-mqtt. Battery cameras use event stream — no drain when idle.</p>
       <div class="space-y-2" x-show="discoveredCameras.length>0">
         <template x-for="id in discoveredCameras" :key="id">
-          <div class="flex flex-col gap-2 p-3 bg-zinc-50 rounded-xl" x-data="{wired:false}">
+          <div class="flex flex-col gap-2 p-3 bg-[#0d1020] border border-white/[0.06] rounded-xl" x-data="{wired:false}">
             <div class="flex items-center gap-3">
-              <span class="text-sm text-zinc-500 font-mono flex-1 truncate" x-text="id"></span>
+              <span class="text-sm text-zinc-400 font-mono flex-1 truncate" x-text="id"></span>
               <input x-model="newCameraNames[id]" placeholder="name (e.g. ring_front)"
-                     class="text-sm px-3 py-1.5 border border-zinc-200 rounded-lg w-40 bg-white">
+                     class="text-sm px-3 py-1.5 border border-white/[0.12] rounded-lg w-40 bg-[#09090b] text-zinc-200 placeholder-zinc-600">
               <button @click="addCamera(id, wired)" :disabled="!newCameraNames[id]"
-                      class="text-xs px-3 py-1.5 bg-brand text-white rounded-lg hover:bg-brand-dark transition-colors disabled:opacity-40 whitespace-nowrap">
+                      class="text-xs px-3 py-1.5 bg-sky-500 text-zinc-950 font-semibold rounded-lg hover:bg-sky-400 transition-colors disabled:opacity-40 whitespace-nowrap">
                 Add to Frigate
               </button>
             </div>
             <label class="flex items-center gap-2 cursor-pointer w-fit">
-              <input type="checkbox" x-model="wired" class="w-3.5 h-3.5 accent-brand">
-              <span class="text-xs text-zinc-500">Wired / powered — use live stream instead of event</span>
+              <input type="checkbox" x-model="wired" class="w-3.5 h-3.5 accent-sky-400">
+              <span class="text-xs text-zinc-400">Wired / powered — use live stream instead of event</span>
             </label>
           </div>
         </template>
       </div>
-      <p x-show="discoveredCameras.length===0" class="text-sm text-zinc-400 italic">
+      <p x-show="discoveredCameras.length===0" class="text-sm text-zinc-500 italic">
         No Ring cameras found — restart ring-mqtt to refresh
       </p>
     </div>
@@ -354,21 +412,21 @@
       <p class="section-title">Storage cleanup</p>
       <p class="section-sub">Events that have preview snapshots but no video (e.g. due to a misconfiguration). Safe to remove.</p>
 
-      <div x-show="Object.keys(orphaned).length===0" class="text-sm text-zinc-400 italic">
+      <div x-show="Object.keys(orphaned).length===0" class="text-sm text-zinc-500 italic">
         No orphaned events found — storage is clean.
       </div>
 
       <div x-show="Object.keys(orphaned).length>0" class="space-y-2 mb-4">
         <template x-for="[cam, count] in Object.entries(orphaned)" :key="cam">
-          <div class="flex items-center justify-between px-3 py-2.5 bg-red-50 rounded-xl">
+          <div class="flex items-center justify-between px-3 py-2.5 bg-red-500/[0.07] border border-red-500/15 rounded-xl">
             <div class="flex items-center gap-2">
               <span x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
-              <span class="text-sm font-medium" x-text="cam"></span>
-              <span class="text-xs text-red-500" x-text="count + ' orphaned'"></span>
+              <span class="font-mono text-sm font-medium text-zinc-200" x-text="cam"></span>
+              <span class="text-xs text-red-400" x-text="count + ' orphaned'"></span>
             </div>
             <button @click="cleaning=cam; fetch('/api/cleanup/orphaned',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({camera:cam})}).then(r=>r.json()).then(d=>{done=d;delete orphaned[cam];cleaning=null})"
                     :disabled="cleaning===cam"
-                    class="text-xs px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg transition-colors disabled:opacity-50">
+                    class="text-xs px-3 py-1.5 bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25 rounded-lg transition-colors disabled:opacity-50">
               <span x-show="cleaning!==cam">Clean up</span>
               <span x-show="cleaning===cam">Cleaning…</span>
             </button>
@@ -376,7 +434,7 @@
         </template>
       </div>
 
-      <div x-show="done" class="text-sm text-emerald-600 font-medium"
+      <div x-show="done" class="text-sm text-emerald-400 font-medium"
            x-text="done ? '✓ Removed ' + done.cleaned_events + ' events, ' + done.deleted_files + ' files' : ''">
       </div>
     </div>
@@ -390,11 +448,11 @@
       <p class="section-sub">Default object set tracked by Frigate. Per-camera overrides below.</p>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <template x-for="obj in allObjects" :key="obj">
-          <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
+          <label class="flex items-center gap-2.5 p-3 border rounded-xl cursor-pointer transition-all select-none"
                  :class="trackedObjects.includes(obj)
-                   ? 'border-brand bg-brand/5 text-brand'
-                   : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'">
-            <input type="checkbox" :value="obj" x-model="trackedObjects" class="w-4 h-4 accent-brand">
+                   ? 'border-sky-500/50 bg-sky-500/10 text-sky-400'
+                   : 'bg-[#0d1020] text-zinc-300 border border-white/[0.07] hover:border-white/[0.18]'">
+            <input type="checkbox" :value="obj" x-model="trackedObjects" class="w-4 h-4 accent-sky-400">
             <span class="text-sm font-medium" x-text="obj"></span>
           </label>
         </template>
@@ -404,43 +462,43 @@
     <template x-for="cam in activeCameras" :key="cam">
       <div class="card p-5">
         <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2.5">
             <span x-text="allCameras[cam]?.battery ? '🔔' : '📷'"></span>
             <div>
-              <p class="text-sm font-bold" x-text="cam"></p>
-              <p class="text-xs text-zinc-400">Per-camera override</p>
+              <p class="font-mono text-sm font-bold text-zinc-100" x-text="cam"></p>
+              <p class="text-xs text-zinc-500">Per-camera override</p>
             </div>
           </div>
           <button @click="cameraOverrideEnabled[cam]=!cameraOverrideEnabled[cam]; initCameraOverride(cam)"
-                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0"
-                  :class="cameraOverrideEnabled[cam] ? 'bg-brand' : 'bg-zinc-300'">
+                  class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 border"
+                  :class="cameraOverrideEnabled[cam] ? 'bg-sky-500 border-sky-400' : 'bg-zinc-800 border-zinc-700'">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform"
                   :class="cameraOverrideEnabled[cam] ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
         <div x-show="cameraOverrideEnabled[cam]" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <template x-for="obj in allObjects" :key="obj">
-            <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
+            <label class="flex items-center gap-2.5 p-3 border rounded-xl cursor-pointer transition-all select-none"
                    :class="(cameraObjects[cam]||[]).includes(obj)
-                     ? 'border-brand bg-brand/5 text-brand'
-                     : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300'">
+                     ? 'border-sky-500/50 bg-sky-500/10 text-sky-400'
+                     : 'bg-[#0d1020] text-zinc-300 border border-white/[0.07] hover:border-white/[0.18]'">
               <input type="checkbox" :value="obj"
                      :checked="(cameraObjects[cam]||[]).includes(obj)"
                      @change="toggleCameraObject(cam,obj)"
-                     class="w-4 h-4 accent-brand">
+                     class="w-4 h-4 accent-sky-400">
               <span class="text-sm font-medium" x-text="obj"></span>
             </label>
           </template>
         </div>
-        <p x-show="!cameraOverrideEnabled[cam]" class="text-xs text-zinc-400 italic">Using global settings</p>
+        <p x-show="!cameraOverrideEnabled[cam]" class="text-xs text-zinc-500 italic">Using global settings</p>
       </div>
     </template>
 
     <div class="card p-4 flex items-center justify-between">
-      <p x-show="saved==='detection'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
+      <p x-show="saved==='detection'" class="text-sm text-emerald-400 font-medium">✓ Saved. Frigate is restarting.</p>
       <span x-show="saved!=='detection'"></span>
       <button @click="saveDetection()" :disabled="savingDetection"
-              class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
+              class="px-6 py-2.5 bg-sky-500 text-zinc-950 text-sm rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 font-semibold ml-auto">
         <span x-show="!savingDetection">Save & restart Frigate</span>
         <span x-show="savingDetection">Saving…</span>
       </button>
@@ -453,47 +511,43 @@
       <p class="section-title">Recording retention</p>
       <div class="space-y-7 mb-6 mt-4">
         <div>
-          <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Continuous <span class="text-zinc-400 text-xs font-normal">(all footage, regardless of events)</span></label>
-            <span class="text-lg font-bold text-brand" x-text="continuousDays==0 ? 'Off' : continuousDays+' days'"></span>
+          <div class="flex justify-between items-baseline mb-2.5">
+            <label class="text-sm font-medium text-zinc-300">Continuous <span class="text-zinc-500 text-xs font-normal">(all footage, regardless of events)</span></label>
+            <span class="text-lg font-bold font-mono text-sky-400 tabular-nums" x-text="continuousDays==0 ? 'Off' : continuousDays+' days'"></span>
           </div>
-          <input type="range" min="0" max="14" x-model.number="continuousDays"
-                 class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>Off</span><span>14 days</span></div>
+          <input type="range" min="0" max="14" x-model.number="continuousDays" class="w-full">
+          <div class="flex justify-between text-xs text-zinc-500 mt-2 font-mono"><span>Off</span><span>14 days</span></div>
         </div>
         <div>
-          <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Motion clips <span class="text-zinc-400 text-xs font-normal">(pixel motion detected)</span></label>
-            <span class="text-lg font-bold text-brand" x-text="motionDays+' days'"></span>
+          <div class="flex justify-between items-baseline mb-2.5">
+            <label class="text-sm font-medium text-zinc-300">Motion clips <span class="text-zinc-500 text-xs font-normal">(pixel motion detected)</span></label>
+            <span class="text-lg font-bold font-mono text-sky-400 tabular-nums" x-text="motionDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="30" x-model.number="motionDays"
-                 class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>30 days</span></div>
+          <input type="range" min="1" max="30" x-model.number="motionDays" class="w-full">
+          <div class="flex justify-between text-xs text-zinc-500 mt-2 font-mono"><span>1 day</span><span>30 days</span></div>
         </div>
         <div>
-          <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs font-normal">(person / car / etc.)</span></label>
-            <span class="text-lg font-bold text-brand" x-text="alertDays+' days'"></span>
+          <div class="flex justify-between items-baseline mb-2.5">
+            <label class="text-sm font-medium text-zinc-300">Alerts <span class="text-zinc-500 text-xs font-normal">(person / car / etc.)</span></label>
+            <span class="text-lg font-bold font-mono text-sky-400 tabular-nums" x-text="alertDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="90" x-model.number="alertDays"
-                 class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
+          <input type="range" min="1" max="90" x-model.number="alertDays" class="w-full">
+          <div class="flex justify-between text-xs text-zinc-500 mt-2 font-mono"><span>1 day</span><span>90 days</span></div>
         </div>
         <div>
-          <div class="flex justify-between items-baseline mb-2">
-            <label class="text-sm font-medium">Detections <span class="text-zinc-400 text-xs font-normal">(motion only, no object)</span></label>
-            <span class="text-lg font-bold text-brand" x-text="detectionDays+' days'"></span>
+          <div class="flex justify-between items-baseline mb-2.5">
+            <label class="text-sm font-medium text-zinc-300">Detections <span class="text-zinc-500 text-xs font-normal">(motion only, no object)</span></label>
+            <span class="text-lg font-bold font-mono text-sky-400 tabular-nums" x-text="detectionDays+' days'"></span>
           </div>
-          <input type="range" min="1" max="90" x-model.number="detectionDays"
-                 class="w-full h-1.5 bg-zinc-200 rounded-full appearance-none cursor-pointer accent-brand">
-          <div class="flex justify-between text-xs text-zinc-400 mt-1.5"><span>1 day</span><span>90 days</span></div>
+          <input type="range" min="1" max="90" x-model.number="detectionDays" class="w-full">
+          <div class="flex justify-between text-xs text-zinc-500 mt-2 font-mono"><span>1 day</span><span>90 days</span></div>
         </div>
       </div>
       <div class="flex items-center justify-between">
-        <p x-show="saved==='retention'" class="text-sm text-emerald-600 font-medium">✓ Saved. Frigate is restarting.</p>
+        <p x-show="saved==='retention'" class="text-sm text-emerald-400 font-medium">✓ Saved. Frigate is restarting.</p>
         <span x-show="saved!=='retention'"></span>
         <button @click="saveRetention()" :disabled="savingRetention"
-                class="px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium ml-auto">
+                class="px-6 py-2.5 bg-sky-500 text-zinc-950 text-sm rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 font-semibold ml-auto">
           <span x-show="!savingRetention">Save & restart Frigate</span>
           <span x-show="savingRetention">Saving…</span>
         </button>
@@ -505,27 +559,27 @@
   <div x-show="activeTab==='credentials'" x-cloak>
     <div class="card p-6 max-w-md">
       <p class="section-title">RTSP credentials</p>
-      <p class="section-sub">Used by ring-mqtt for Ring camera streams. After saving, also update <code class="bg-zinc-100 px-1 rounded text-xs">.env</code> on the host.</p>
+      <p class="section-sub">Used by ring-mqtt for Ring camera streams. After saving, also update <code class="bg-zinc-800 px-1 rounded text-xs font-mono text-sky-400">.env</code> on the host.</p>
       <div class="space-y-4 mb-5">
         <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Username</label>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Username</label>
           <input type="text" x-model="rtspUser"
-                 class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm bg-white">
+                 class="w-full px-3 py-2.5 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200 font-mono">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Password</label>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Password</label>
           <input type="password" x-model="rtspPass"
-                 class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm bg-white">
+                 class="w-full px-3 py-2.5 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200 font-mono">
         </div>
       </div>
       <button @click="saveCredentials()" :disabled="savingCredentials"
-              class="w-full px-6 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-50 font-medium">
+              class="w-full px-6 py-2.5 bg-sky-500 text-zinc-950 text-sm rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 font-semibold">
         <span x-show="!savingCredentials">Save & restart ring-mqtt</span>
         <span x-show="savingCredentials">Saving…</span>
       </button>
-      <div x-show="saved==='credentials'" class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-        <p class="text-sm font-medium text-amber-800">✓ ring-mqtt restarted.</p>
-        <p class="text-xs text-amber-700 mt-1">Also update <code>RING_RTSP_PASS</code> in <code>.env</code> and run <code>make frigate-config</code>.</p>
+      <div x-show="saved==='credentials'" class="mt-4 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+        <p class="text-sm font-medium text-amber-300">✓ ring-mqtt restarted.</p>
+        <p class="text-xs text-amber-400/80 mt-1">Also update <code class="font-mono">RING_RTSP_PASS</code> in <code class="font-mono">.env</code> and run <code class="font-mono">make frigate-config</code>.</p>
       </div>
     </div>
   </div>
@@ -534,21 +588,21 @@
   <div x-show="activeTab==='logs'" x-cloak>
     <div class="card p-5">
       <div class="flex items-center justify-between mb-4">
-        <div class="flex gap-1 p-1 bg-zinc-100 rounded-lg">
+        <div class="flex gap-1 p-1 bg-[#0f0f11] border border-zinc-800 rounded-lg">
           <template x-for="(_, key) in services" :key="key">
             <button @click="logsService=key; fetchLogs()"
-                    class="px-3 py-1 text-xs font-medium rounded-md transition-all"
-                    :class="logsService===key ? 'bg-white text-brand shadow-sm' : 'text-zinc-500 hover:text-zinc-700'">
+                    class="px-3 py-1 text-xs font-semibold font-mono rounded-md transition-all"
+                    :class="logsService===key ? 'bg-zinc-800 text-sky-400' : 'text-zinc-500 hover:text-zinc-300'">
               <span x-text="key"></span>
             </button>
           </template>
         </div>
         <button @click="fetchLogs()"
-                class="text-xs px-3 py-1.5 border border-zinc-200 rounded-lg text-zinc-500 hover:bg-zinc-50 transition-colors">
+                class="text-xs px-3 py-1.5 border border-white/[0.12] rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
           Refresh
         </button>
       </div>
-      <pre class="bg-zinc-900 text-zinc-100 text-xs p-4 rounded-xl overflow-auto max-h-[28rem] font-mono leading-relaxed whitespace-pre-wrap break-all"
+      <pre class="log-pre bg-black text-green-400 text-xs p-4 rounded-xl overflow-auto max-h-[28rem] font-mono leading-relaxed whitespace-pre-wrap break-all border border-zinc-800"
            x-text="logsContent||'Loading…'"></pre>
     </div>
   </div>
@@ -624,6 +678,16 @@ function app() {
     },
 
     LABEL_EMOJI: {person:'👤',car:'🚗',dog:'🐕',cat:'🐱',bicycle:'🚲',motorcycle:'🏍️',truck:'🚛',bird:'🐦'},
+    LABEL_BADGE: {
+      person:'bg-blue-500/30 text-blue-300 ring-1 ring-blue-500/30',
+      car:'bg-slate-500/30 text-slate-200 ring-1 ring-slate-400/25',
+      dog:'bg-emerald-500/30 text-emerald-300 ring-1 ring-emerald-500/30',
+      cat:'bg-purple-500/30 text-purple-300 ring-1 ring-purple-500/30',
+      bicycle:'bg-lime-500/30 text-lime-300 ring-1 ring-lime-500/30',
+      motorcycle:'bg-orange-500/30 text-orange-300 ring-1 ring-orange-500/30',
+      truck:'bg-rose-500/30 text-rose-300 ring-1 ring-rose-500/30',
+      bird:'bg-sky-500/30 text-sky-300 ring-1 ring-sky-500/30',
+    },
     objectCounts(cam) {
       const ev = this.eventsToday[cam] || {};
       return Object.entries(ev)
