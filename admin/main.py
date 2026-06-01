@@ -44,7 +44,7 @@ def ring_camera_config(camera_id: str) -> dict:
     user, password = _go2rtc_rtsp_credentials()
     return {
         "ffmpeg": {"inputs": [{
-            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_live",
+            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_event",
             "roles": ["detect", "record"],
         }]},
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
@@ -266,11 +266,15 @@ async def api_cameras():
 
 @app.post("/api/cameras/add")
 async def api_add_ring_camera(camera_id: str = Form(...), camera_name: str = Form(...)):
-    """Add a Ring battery camera — starts paused, activated only by motion trigger."""
+    """Add a Ring battery camera using the event stream — records on motion, no battery drain."""
     cfg = ring_camera_config(camera_id)
     meta = read_camera_meta()
-    meta[camera_name] = {"battery": True, "active": False, "camera_id": camera_id, "config": cfg}
+    meta[camera_name] = {"battery": True, "active": True, "camera_id": camera_id, "config": cfg}
     write_camera_meta(meta)
+    fcfg = read_frigate_config()
+    fcfg.setdefault("cameras", {})[camera_name] = cfg
+    write_frigate_config(fcfg)
+    restart_container("frigate")
     return {"ok": True}
 
 
@@ -348,35 +352,19 @@ async def api_remove_camera(camera_name: str = Form(...)):
 async def api_camera_live(camera: str, request: Request):
     data    = await request.json()
     enabled = bool(data.get("enabled", True))
-    meta    = read_camera_meta()
-    cam_meta = meta.get(camera, {})
 
-    if cam_meta.get("battery"):
-        # Battery camera: add/remove from Frigate config entirely
-        fcfg = read_frigate_config()
-        if enabled:
-            # Restore from saved template
-            cam_cfg = cam_meta.get("config")
-            if not cam_cfg:
-                return JSONResponse({"error": "no saved config template"}, status_code=400)
-            fcfg.setdefault("cameras", {})[camera] = cam_cfg
-        else:
-            # Remove from Frigate — saves battery
-            fcfg.get("cameras", {}).pop(camera, None)
+    # All cameras: toggle detect + record via Frigate API — no config change, no restart
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{FRIGATE_API}/api/{camera}/detect",
+                          json={"enabled": enabled}, timeout=5)
+        await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
+                          json={"enabled": enabled}, timeout=5)
 
-        # Update active flag in meta
-        cam_meta["active"] = enabled
-        meta[camera] = cam_meta
+    # Keep active flag in meta in sync
+    meta = read_camera_meta()
+    if camera in meta:
+        meta[camera]["active"] = enabled
         write_camera_meta(meta)
-        write_frigate_config(fcfg)
-        restart_container("frigate")
-    else:
-        # Wired camera: toggle detect + record via Frigate API (no restart needed)
-        async with httpx.AsyncClient() as client:
-            await client.post(f"{FRIGATE_API}/api/{camera}/detect",
-                              json={"enabled": enabled}, timeout=5)
-            await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
-                              json={"enabled": enabled}, timeout=5)
 
     return {"ok": True, "camera": camera, "enabled": enabled}
 
@@ -444,151 +432,50 @@ async def api_save_credentials(request: Request):
     return {"ok": True, "note": "ring-mqtt restarted. Update RING_RTSP_PASS in .env and restart Frigate."}
 
 
-# ── API: motion trigger settings ─────────────────────────────────────────────
+# ── MQTT listener (battery level only) ───────────────────────────────────────
+# Battery cameras use the _event RTSP stream: ring-mqtt activates it only when
+# Ring detects motion, so Frigate records without draining battery continuously.
+# No add/remove/restart logic needed — Frigate handles recording via event stream.
 
-@app.get("/api/motion-settings")
-async def api_motion_settings():
-    meta = read_camera_meta()
-    result = {}
-    for name, m in meta.items():
-        if m.get("battery"):
-            result[name] = {
-                "motion_trigger": m.get("motion_trigger", True),
-                "record_seconds": m.get("record_seconds", 60),
-            }
-    return result
-
-@app.post("/api/motion-settings")
-async def api_save_motion_settings(request: Request):
-    data = await request.json()
-    meta = read_camera_meta()
-    for cam_name, settings in data.items():
-        if cam_name in meta and meta[cam_name].get("battery"):
-            meta[cam_name]["motion_trigger"]  = bool(settings.get("motion_trigger", True))
-            meta[cam_name]["record_seconds"]  = int(settings.get("record_seconds", 60))
-    write_camera_meta(meta)
-    return {"ok": True}
-
-
-# ── MQTT motion trigger ───────────────────────────────────────────────────────
-
-logger = logging.getLogger("motion_trigger")
+logger = logging.getLogger("ring_admin")
 logging.basicConfig(level=logging.INFO)
 
-# Per-camera timer: camera_name -> threading.Timer
-_motion_timers: dict[str, threading.Timer] = {}
-_timer_lock = threading.Lock()
-
-MQTT_HOST   = "mosquitto"
-MQTT_PORT   = 1883
-RING_TOPIC  = "ring"  # base topic from ring-mqtt config
+MQTT_HOST  = "mosquitto"
+MQTT_PORT  = 1883
+RING_TOPIC = "ring"
 
 
 def _camera_name_for_id(camera_id: str) -> str | None:
-    """Find the camera name in meta that matches the given Ring camera_id."""
     for name, m in read_camera_meta().items():
         if m.get("battery") and m.get("camera_id") == camera_id:
             return name
     return None
 
 
-def _enable_battery_camera(cam_name: str):
-    """Add battery camera to Frigate and restart."""
-    meta = read_camera_meta()
-    m    = meta.get(cam_name, {})
-    if not m.get("battery") or m.get("active"):
-        return
-    cfg  = m.get("config")
-    if not cfg:
-        return
-    fcfg = read_frigate_config()
-    fcfg.setdefault("cameras", {})[cam_name] = cfg
-    m["active"] = True
-    meta[cam_name] = m
-    write_camera_meta(meta)
-    write_frigate_config(fcfg)
-    try:
-        restart_container("frigate")
-        logger.info("Motion trigger: enabled %s in Frigate", cam_name)
-    except Exception as e:
-        logger.warning("Motion trigger: could not restart Frigate: %s", e)
-
-
-def _disable_battery_camera(cam_name: str):
-    """Remove battery camera from Frigate and restart."""
-    meta = read_camera_meta()
-    m    = meta.get(cam_name, {})
-    if not m.get("battery") or not m.get("active"):
-        return
-    fcfg = read_frigate_config()
-    fcfg.get("cameras", {}).pop(cam_name, None)
-    m["active"] = False
-    meta[cam_name] = m
-    write_camera_meta(meta)
-    write_frigate_config(fcfg)
-    try:
-        restart_container("frigate")
-        logger.info("Motion trigger: disabled %s in Frigate", cam_name)
-    except Exception as e:
-        logger.warning("Motion trigger: could not restart Frigate: %s", e)
-
-
-def _schedule_disable(cam_name: str, seconds: int):
-    """Cancel any existing timer and schedule a new disable."""
-    with _timer_lock:
-        old = _motion_timers.get(cam_name)
-        if old:
-            old.cancel()
-        t = threading.Timer(seconds, _disable_battery_camera, args=[cam_name])
-        t.daemon = True
-        t.start()
-        _motion_timers[cam_name] = t
-
-
 def _on_mqtt_message(client, userdata, msg):
     topic   = msg.topic
     payload = msg.payload.decode("utf-8", errors="replace").strip()
 
-    # ring/<location>/<...>/camera/<camera_id>/motion/state
-    m = re.search(r"/camera/([^/]+)/motion/state$", topic)
-    if m:
-        camera_id = m.group(1)
-        cam_name  = _camera_name_for_id(camera_id)
-        if not cam_name:
-            return
-        meta     = read_camera_meta()
-        cam_meta = meta.get(cam_name, {})
-        if not cam_meta.get("motion_trigger", True):
-            return
-        record_seconds = cam_meta.get("record_seconds", 60)
-        if payload.upper() == "ON":
-            logger.info("Motion ON for %s — enabling stream", cam_name)
-            _enable_battery_camera(cam_name)
-            _schedule_disable(cam_name, record_seconds)
-        elif payload.upper() == "OFF":
-            logger.info("Motion OFF for %s — will disable in %ds", cam_name, record_seconds)
-            _schedule_disable(cam_name, record_seconds)
-        return
-
     # ring/<location>/<...>/camera/<camera_id>/info/state  {"batteryLevel": N, ...}
     m = re.search(r"/camera/([^/]+)/info/state$", topic)
-    if m:
-        camera_id = m.group(1)
-        cam_name  = _camera_name_for_id(camera_id)
-        if not cam_name:
-            return
-        try:
-            data  = json.loads(payload)
-            level = int(data.get("batteryLevel", data.get("batteryLife", -1)))
-        except (ValueError, KeyError, TypeError):
-            return
-        if level < 0:
-            return
-        meta = read_camera_meta()
-        if cam_name in meta and meta[cam_name].get("battery_level") != level:
-            meta[cam_name]["battery_level"] = level
-            write_camera_meta(meta)
-            logger.info("Battery level for %s: %d%%", cam_name, level)
+    if not m:
+        return
+    camera_id = m.group(1)
+    cam_name  = _camera_name_for_id(camera_id)
+    if not cam_name:
+        return
+    try:
+        data  = json.loads(payload)
+        level = int(data.get("batteryLevel", data.get("batteryLife", -1)))
+    except (ValueError, KeyError, TypeError):
+        return
+    if level < 0:
+        return
+    meta = read_camera_meta()
+    if cam_name in meta and meta[cam_name].get("battery_level") != level:
+        meta[cam_name]["battery_level"] = level
+        write_camera_meta(meta)
+        logger.info("Battery level for %s: %d%%", cam_name, level)
 
 
 def _start_mqtt_listener():
