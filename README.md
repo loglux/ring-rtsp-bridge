@@ -159,14 +159,44 @@ Credentials are set in Admin → Credentials (or in `ring-mqtt-data/config.json`
 
 ---
 
+## Deployment
+
+### Standard Linux
+
+```sh
+make init   # first run
+make up     # subsequent starts
+```
+
+### ASUSTOR NAS
+
+ASUSTOR enforces a hard file descriptor limit of 1024 per process. The `docker-socket-proxy` service (HAProxy) requires ~8034 FDs and crashes immediately on ASUSTOR. Use the provided override which replaces the proxy with a no-op container and mounts the Docker socket directly instead:
+
+```sh
+make asustor-init   # first run
+make asustor-up     # subsequent starts
+```
+
+The override file is `docker-compose.asustor.yml`. It:
+- Replaces `docker-socket-proxy` with a `busybox sleep infinity` container (satisfies `depends_on` without proxying)
+- Adds `/var/run/docker.sock` directly to the admin container
+- Sets `DOCKER_HOST=""` so the admin uses the socket, not the proxy
+
+This is acceptable because port 8085 is LAN-only on a home NAS and the admin process runs as a non-root user (uid 1001).
+
+---
+
 ## Makefile reference
 
 ```sh
-make init            # First-run: start stack + push configs
+make init            # First-run: start stack + push configs (standard Linux)
 make up              # Start all containers
 make down            # Stop all containers
 make status          # Show container status
 make pull            # Pull latest images
+
+make asustor-init    # First-run on ASUSTOR NAS (no socket proxy)
+make asustor-up      # Start all containers on ASUSTOR
 
 make admin-deploy    # Rebuild admin image and recreate container
 make frigate-config  # Push frigate-config/config.yaml and restart Frigate
