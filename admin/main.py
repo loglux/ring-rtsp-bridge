@@ -578,16 +578,19 @@ def _on_mqtt_message(client, userdata, msg):
             _schedule_disable(cam_name, record_seconds)
         return
 
-    # ring/<location>/<...>/camera/<camera_id>/battery/state
-    m = re.search(r"/camera/([^/]+)/battery/state$", topic)
+    # ring/<location>/<...>/camera/<camera_id>/info/state  {"batteryLevel": N, ...}
+    m = re.search(r"/camera/([^/]+)/info/state$", topic)
     if m:
         camera_id = m.group(1)
         cam_name  = _camera_name_for_id(camera_id)
         if not cam_name:
             return
         try:
-            level = int(float(payload))
-        except ValueError:
+            data  = json.loads(payload)
+            level = int(data.get("batteryLevel", data.get("batteryLife", -1)))
+        except (ValueError, KeyError, TypeError):
+            return
+        if level < 0:
             return
         meta = read_camera_meta()
         if cam_name in meta and meta[cam_name].get("battery_level") != level:
