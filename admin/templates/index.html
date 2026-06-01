@@ -103,6 +103,17 @@
          class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 hover:bg-sky-500/25 hover:text-sky-300 transition-colors">
         Frigate UI <span class="text-[10px]">↗</span>
       </a>
+      {% if auth_enabled %}
+      <form method="POST" action="/logout" class="hidden sm:block">
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-zinc-500 border border-white/[0.08] hover:text-zinc-300 hover:border-white/[0.15] transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+          </svg>
+          Sign out
+        </button>
+      </form>
+      {% endif %}
     </div>
   </div>
 </header>

@@ -80,8 +80,54 @@
 
     <div class="px-7 py-6">
 
-      <!-- ═══ STEP 0: RTSP Credentials ════════════════════════════ -->
+      <!-- ═══ STEP 0: Admin password ══════════════════════════════ -->
       <div x-show="step === 0" x-cloak class="space-y-4">
+        <div class="bg-brand/5 border border-brand/20 rounded-xl p-3 text-xs text-zinc-600">
+          This password protects the admin panel. Enter it once per browser session. Store it in your password manager.
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Admin password</label>
+          <div class="flex gap-2">
+            <div class="relative flex-1">
+              <input x-model="adminPass" :type="showAdminPass ? 'text' : 'password'"
+                     placeholder="Set manually or generate →"
+                     class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 pr-10 font-mono">
+              <button @click="showAdminPass=!showAdminPass" type="button"
+                      class="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors">
+                <svg x-show="!showAdminPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+                <svg x-show="showAdminPass" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                </svg>
+              </button>
+            </div>
+            <button @click="generateAdminPassword()" type="button"
+                    class="px-4 py-2.5 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors font-medium flex-shrink-0 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Generate
+            </button>
+          </div>
+          <p x-show="adminPass.length > 0 && adminPass.length < 8"
+             class="text-xs text-amber-500 mt-1.5">Use at least 8 characters</p>
+          <p x-show="adminPassGenerated" class="text-xs text-emerald-600 mt-1.5">
+            ✓ Strong password generated — copy it to your password manager now
+          </p>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-zinc-500 mb-1.5">Confirm password</label>
+          <input x-model="adminPassConfirm" :type="showAdminPass ? 'text' : 'password'"
+                 placeholder="Re-enter password"
+                 class="w-full px-3 py-2.5 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 font-mono">
+          <p x-show="adminPassConfirm.length > 0 && adminPass !== adminPassConfirm"
+             class="text-xs text-amber-500 mt-1.5">Passwords don't match</p>
+        </div>
+      </div>
+
+      <!-- ═══ STEP 1: RTSP Credentials ════════════════════════════ -->
+      <div x-show="step === 1" x-cloak class="space-y-4">
         <div class="bg-brand/5 border border-brand/20 rounded-xl p-3 text-xs text-zinc-600">
           These credentials are <strong>internal to the stack</strong> — only ring-mqtt and Frigate use them. You don't need to remember the password; we can generate it for you.
         </div>
@@ -123,8 +169,8 @@
         </div>
       </div>
 
-      <!-- ═══ STEP 1: Ring Auth ════════════════════════════════════ -->
-      <div x-show="step === 1" x-cloak>
+      <!-- ═══ STEP 2: Ring Auth ════════════════════════════════════ -->
+      <div x-show="step === 2" x-cloak>
 
         <!-- Not connected yet -->
         <div x-show="!ringConnected">
@@ -180,8 +226,8 @@
         </div>
       </div>
 
-      <!-- ═══ STEP 2: Cameras ══════════════════════════════════════ -->
-      <div x-show="step === 2" x-cloak>
+      <!-- ═══ STEP 3: Cameras ══════════════════════════════════════ -->
+      <div x-show="step === 3" x-cloak>
 
         <!-- Added list -->
         <div x-show="cameras.length > 0" class="mb-4 space-y-2">
@@ -267,8 +313,8 @@
         </p>
       </div>
 
-      <!-- ═══ STEP 3: Detection ════════════════════════════════════ -->
-      <div x-show="step === 3" x-cloak>
+      <!-- ═══ STEP 4: Detection ════════════════════════════════════ -->
+      <div x-show="step === 4" x-cloak>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <template x-for="obj in allObjects" :key="obj">
             <label class="flex items-center gap-2.5 p-3 border-2 rounded-xl cursor-pointer transition-all select-none"
@@ -283,8 +329,8 @@
         <p x-show="objects.length === 0" class="text-xs text-amber-500 mt-3">Select at least one object</p>
       </div>
 
-      <!-- ═══ STEP 4: Retention ════════════════════════════════════ -->
-      <div x-show="step === 4" x-cloak class="space-y-7">
+      <!-- ═══ STEP 5: Retention ════════════════════════════════════ -->
+      <div x-show="step === 5" x-cloak class="space-y-7">
         <div>
           <div class="flex justify-between items-baseline mb-2">
             <label class="text-sm font-medium">Alerts <span class="text-zinc-400 text-xs">(detected person/car/etc)</span></label>
@@ -305,8 +351,8 @@
         </div>
       </div>
 
-      <!-- ═══ STEP 5: Review & Apply ═══════════════════════════════ -->
-      <div x-show="step === 5" x-cloak>
+      <!-- ═══ STEP 6: Review & Apply ═══════════════════════════════ -->
+      <div x-show="step === 6" x-cloak>
 
         <!-- Summary -->
         <div x-show="!applying && !done" class="space-y-2 mb-6">
@@ -375,16 +421,16 @@
       <!-- Step-specific next buttons -->
       <template x-if="!applying">
         <div class="ml-auto">
-          <!-- Steps 0,3,4: simple Continue -->
-          <button x-show="[0,3,4].includes(step)"
+          <!-- Steps 0,1,4,5: simple Continue -->
+          <button x-show="[0,1,4,5].includes(step)"
                   @click="nextStep()"
                   :disabled="!canNext()"
                   class="px-6 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
             Continue →
           </button>
 
-          <!-- Step 1: Ring auth — skip if already connected -->
-          <div x-show="step === 1" class="flex gap-3">
+          <!-- Step 2: Ring auth — skip if already connected -->
+          <div x-show="step === 2" class="flex gap-3">
             <button x-show="!ringConnected"
                     @click="skipRingAuth()"
                     class="px-4 py-2 border border-zinc-200 text-zinc-500 text-sm rounded-xl hover:bg-zinc-50 transition-colors">
@@ -397,16 +443,16 @@
             </button>
           </div>
 
-          <!-- Step 2: Cameras -->
-          <button x-show="step === 2"
+          <!-- Step 3: Cameras -->
+          <button x-show="step === 3"
                   @click="nextStep()"
                   :disabled="cameras.length === 0"
                   class="px-6 py-2 bg-brand text-white text-sm rounded-xl hover:bg-brand-dark transition-colors disabled:opacity-40 font-medium">
             Continue →
           </button>
 
-          <!-- Step 5: Apply -->
-          <button x-show="step === 5 && !done"
+          <!-- Step 6: Apply -->
+          <button x-show="step === 6 && !done"
                   @click="applyAll()"
                   class="px-8 py-2 bg-emerald-600 text-white text-sm rounded-xl hover:bg-emerald-700 transition-colors font-medium">
             ✓ Apply configuration
@@ -427,6 +473,7 @@ function wizard() {
   return {
     step: 0,
     steps: [
+      { short: 'Admin',       title: 'Admin password',            desc: 'Protect the admin panel with a password. You\'ll enter it once per session.' },
       { short: 'Credentials', title: 'RTSP credentials',         desc: 'Set a username and password to protect the Ring camera stream.' },
       { short: 'Ring auth',   title: 'Connect Ring account',      desc: 'Authenticate with your Ring account so ring-mqtt can discover your cameras.' },
       { short: 'Cameras',     title: 'Add cameras',               desc: 'Add Ring cameras and any IP cameras to Frigate.' },
@@ -435,12 +482,15 @@ function wizard() {
       { short: 'Apply',       title: 'Review & apply',            desc: 'Everything looks good? Apply the configuration.' },
     ],
 
-    // step 0
+    // step 0 — admin password
+    adminPass: '', adminPassConfirm: '', showAdminPass: false, adminPassGenerated: false,
+
+    // step 1 — RTSP credentials
     creds: { user: {{ (ring_cfg.get('livestream_user','stream_user')) | tojson }}, pass: '' },
     showPass: false,
     generated: false,
 
-    // step 1
+    // step 2
     ringConnected: false,
     ringSkipped: false,
     ringMqttStatus: 'checking…',
@@ -469,8 +519,20 @@ function wizard() {
 
     // ── init ────────────────────────────────────────────────────────
     async init() {
-      this.generatePassword();   // auto-generate on load
+      this.generateAdminPassword();
+      this.generatePassword();
       await this.checkRingStatus();
+    },
+
+    generateAdminPassword() {
+      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+      const arr = new Uint8Array(20);
+      crypto.getRandomValues(arr);
+      const pw = Array.from(arr, b => chars[b % chars.length]).join('');
+      this.adminPass = pw;
+      this.adminPassConfirm = pw;
+      this.showAdminPass = true;
+      this.adminPassGenerated = true;
     },
 
     generatePassword() {
@@ -484,27 +546,25 @@ function wizard() {
 
     // ── navigation ──────────────────────────────────────────────────
     canNext() {
-      if (this.step === 0) return this.creds.user.length > 0 && this.creds.pass.length >= 1;
-      if (this.step === 1) return this.ringConnected || this.ringSkipped;
-      if (this.step === 2) return this.cameras.length > 0;
-      if (this.step === 3) return this.objects.length > 0;
+      if (this.step === 0) return this.adminPass.length >= 8 && this.adminPass === this.adminPassConfirm;
+      if (this.step === 1) return this.creds.user.length > 0 && this.creds.pass.length >= 1;
+      if (this.step === 2) return this.ringConnected || this.ringSkipped;
+      if (this.step === 3) return this.cameras.length > 0;
+      if (this.step === 4) return this.objects.length > 0;
       return true;
     },
 
     nextStep() {
       if (!this.canNext()) return;
-      if (this.step === 1) {
-        // refresh discovered cameras before showing step 2
-        this.refreshDiscovered();
-      }
+      if (this.step === 2) this.refreshDiscovered();
       this.step++;
-      if (this.step === 1) this.startRingPoll();
+      if (this.step === 2) this.startRingPoll();
       else this.stopRingPoll();
     },
 
     prevStep() {
       this.step--;
-      if (this.step === 1) this.startRingPoll();
+      if (this.step === 2) this.startRingPoll();
       else this.stopRingPoll();
     },
 
@@ -543,11 +603,8 @@ function wizard() {
           this.ringConnected = true;
           this.stopRingPoll();
           // auto-advance after 1.5s so user sees the success state
-          if (this.step === 1) {
-            setTimeout(() => {
-              this.refreshDiscovered();
-              this.step = 2;
-            }, 1500);
+          if (this.step === 2) {
+            setTimeout(() => { this.refreshDiscovered(); this.step = 3; }, 1500);
           }
         }
       } catch {}
@@ -579,6 +636,12 @@ function wizard() {
     // ── apply ────────────────────────────────────────────────────────
     async applyAll() {
       this.applying = true;
+
+      this.applyingStep = 'Setting admin password…';
+      await fetch('/api/set-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: this.adminPass }),
+      });
 
       this.applyingStep = 'Saving RTSP credentials…';
       await fetch('/api/credentials', {

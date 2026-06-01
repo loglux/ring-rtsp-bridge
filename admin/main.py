@@ -1,8 +1,12 @@
+import hashlib
+import hmac
 import json
 import logging
 import re
+import secrets
 import threading
 import time
+import time as _time
 from pathlib import Path
 
 import docker
@@ -15,6 +19,62 @@ from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
 templates = Jinja2Templates(directory="/app/templates")
+
+# ── auth ──────────────────────────────────────────────────────────────────────
+
+AUTH_CONFIG_PATH = Path("/frigate-config/auth.json")
+_sessions: dict = {}          # token → expiry timestamp
+_SESSION_TTL    = 7 * 24 * 3600
+
+def _read_auth() -> dict:
+    try:
+        return json.loads(AUTH_CONFIG_PATH.read_text())
+    except Exception:
+        return {}
+
+def _write_auth(d: dict):
+    AUTH_CONFIG_PATH.write_text(json.dumps(d, indent=2))
+
+def _hash_password(pw: str) -> str:
+    salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt.encode(), 260_000)
+    return f"pbkdf2:260000:{salt}:{h.hex()}"
+
+def _verify_password(pw: str, stored: str) -> bool:
+    try:
+        _, iters, salt, h = stored.split(":")
+        computed = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt.encode(), int(iters))
+        return hmac.compare_digest(computed.hex(), h)
+    except Exception:
+        return False
+
+def _new_session() -> str:
+    tok = secrets.token_urlsafe(32)
+    _sessions[tok] = _time.time() + _SESSION_TTL
+    return tok
+
+def _valid_session(tok: str | None) -> bool:
+    if not tok:
+        return False
+    exp = _sessions.get(tok)
+    if not exp or _time.time() > exp:
+        _sessions.pop(tok, None)
+        return False
+    return True
+
+@app.middleware("http")
+async def _auth_guard(request: Request, call_next):
+    public = {"/login", "/setup", "/api/set-password", "/api/ring-status"}
+    if request.url.path in public:
+        return await call_next(request)
+    # No password set → no auth required (backward compat / first run)
+    if not _read_auth().get("password_hash"):
+        return await call_next(request)
+    if _valid_session(request.cookies.get("ring_session")):
+        return await call_next(request)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
 
 RING_CONFIG_PATH    = Path("/ring-mqtt-data/config.json")
 GO2RTC_PATH         = Path("/ring-mqtt-data/go2rtc.yaml")
@@ -235,6 +295,7 @@ async def index(request: Request):
     disc     = discovered_cameras()
     frigate_url  = f"http://{request.url.hostname}:5000"
     events_today = frigate_events_today()
+    auth_enabled = bool(_read_auth().get("password_hash"))
     return templates.TemplateResponse(request, "index.html", {
         "statuses":     statuses,
         "stats":        stats,
@@ -245,7 +306,48 @@ async def index(request: Request):
         "all_objects":  ALL_OBJECTS,
         "frigate_url":  frigate_url,
         "events_today": events_today,
+        "auth_enabled": auth_enabled,
     })
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if _valid_session(request.cookies.get("ring_session")):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(request, "login.html", {
+        "error": request.query_params.get("error"),
+    })
+
+@app.post("/login")
+async def login_post(request: Request, password: str = Form(...)):
+    cfg = _read_auth()
+    stored = cfg.get("password_hash", "")
+    if stored and _verify_password(password, stored):
+        tok = _new_session()
+        nxt = request.query_params.get("next", "/")
+        resp = RedirectResponse(nxt, status_code=303)
+        resp.set_cookie("ring_session", tok, httponly=True, samesite="lax",
+                        max_age=_SESSION_TTL, secure=False)
+        return resp
+    return RedirectResponse("/login?error=1", status_code=303)
+
+@app.post("/logout")
+async def logout(request: Request):
+    _sessions.pop(request.cookies.get("ring_session"), None)
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie("ring_session")
+    return resp
+
+@app.post("/api/set-password")
+async def api_set_password(request: Request):
+    data = await request.json()
+    pw = data.get("password", "")
+    if len(pw) < 8:
+        return JSONResponse({"error": "Password must be at least 8 characters"}, status_code=400)
+    cfg = _read_auth()
+    cfg["password_hash"] = _hash_password(pw)
+    cfg.setdefault("mode", "local")
+    _write_auth(cfg)
+    return {"ok": True}
 
 @app.get("/setup", response_class=HTMLResponse)
 async def setup(request: Request):
