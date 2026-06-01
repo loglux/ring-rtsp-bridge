@@ -272,6 +272,8 @@ async def api_restart(service: str):
 
 @app.get("/api/logs/{service}")
 async def api_logs(service: str, lines: int = 60):
+    if service not in SERVICES:
+        return JSONResponse({"error": f"Unknown service: {service}"}, status_code=400)
     return {"logs": container_logs(service, lines)}
 
 

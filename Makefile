@@ -100,6 +100,8 @@ check-env:
 		val=$$(echo $$line | cut -d= -f2-); \
 		if echo "$$val" | grep -qE '^(change_me|your_camera_id_here)$$'; then \
 			echo "WARN: $$key = $$val  ← нужно изменить"; \
+		elif echo "$$key" | grep -qiE '(pass|password|secret|token|key)'; then \
+			echo "OK:   $$key = [set]"; \
 		else \
 			echo "OK:   $$key = $$val"; \
 		fi; \

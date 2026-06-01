@@ -16,18 +16,31 @@ services:
         exec mosquitto -c /tmp/mq.conf
     volumes:
       - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "hc", "-W", "3"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   ring-mqtt:
     image: tsightler/ring-mqtt
     container_name: ring-rtsp-bridge
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_healthy
     ports:
       - "55123:55123"
       - "${RING_RTSP_PORT:-8554}:8554"
     volumes:
       - ring-mqtt-data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z localhost 55123 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     logging:
       options:
         max-size: 10m
@@ -38,8 +51,10 @@ services:
     container_name: ring-frigate
     restart: unless-stopped
     depends_on:
-      - ring-mqtt
-      - mosquitto
+      ring-mqtt:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
     ports:
       - "5000:5000"
       - "8971:8971"
@@ -54,25 +69,51 @@ services:
       - FRIGATE_RTSP_USER=${RING_RTSP_USER:-stream_user}
       - FRIGATE_RTSP_PASSWORD=${RING_RTSP_PASS:-change_me}
       - FRIGATE_CAMERA_ID=${RING_CAMERA_ID}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     logging:
       options:
         max-size: 10m
         max-file: "3"
+
+  # Filtered Docker API proxy — exposes only container read + restart to admin.
+  # Prevents admin from accessing the full Docker socket (privilege escalation risk).
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: ring-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - LOG_LEVEL=warning
+    networks:
+      - proxy-net
 
   admin:
     build: ./admin
     container_name: ring-admin
     restart: unless-stopped
     depends_on:
+      - docker-proxy
       - ring-mqtt
       - frigate
     ports:
       - "8085:8090"
+    environment:
+      - DOCKER_HOST=tcp://docker-proxy:2375
     volumes:
       - ring-mqtt-data:/ring-mqtt-data
       - frigate-config:/frigate-config
       - frigate-clips:/media/frigate
-      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+      - proxy-net
     logging:
       options:
         max-size: 5m
@@ -83,3 +124,9 @@ volumes:
   ring-mqtt-data:
   frigate-config:
   frigate-clips:
+
+networks:
+  default: {}
+  # Isolated network shared only between admin and the Docker proxy.
+  proxy-net:
+    internal: true
