@@ -32,10 +32,17 @@ def client(tmp_path):
     go2rtc = tmp_path / "go2rtc.yaml"
     go2rtc.write_text("streams:\n  abc123_live: exec://test\n")
 
+    mock_container = MagicMock()
+    mock_container.status = "running"
+    mock_container.logs.return_value = b"Successfully established connection to Ring API"
+
+    mock_docker = MagicMock()
+    mock_docker.containers.get.return_value = mock_container
+
     with patch("main.RING_CONFIG_PATH", ring_cfg), \
          patch("main.FRIGATE_CONFIG_PATH", frigate_cfg), \
          patch("main.GO2RTC_PATH", go2rtc), \
-         patch("main.docker_client"), \
+         patch("main.docker_client", return_value=mock_docker), \
          patch("main.frigate_stats", return_value={}), \
          patch("main.restart_container"):
         from main import app

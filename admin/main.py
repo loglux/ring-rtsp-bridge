@@ -120,8 +120,7 @@ async def index(request: Request):
     stats = frigate_stats()
     ring_cfg = read_ring_config()
     disc = discovered_cameras()
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "index.html", {
         "statuses": statuses,
         "stats": stats,
         "fcfg": fcfg,
@@ -135,8 +134,7 @@ async def index(request: Request):
 async def setup(request: Request):
     ring_cfg = read_ring_config()
     disc = discovered_cameras()
-    return templates.TemplateResponse("setup.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "setup.html", {
         "ring_cfg": ring_cfg,
         "disc": disc,
     })
