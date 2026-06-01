@@ -378,16 +378,8 @@ async def api_camera_live(camera: str, request: Request):
             if t:
                 t.cancel()
 
-    # All cameras: toggle via Frigate API — no config change, no restart
-    async with httpx.AsyncClient() as client:
-        await client.post(f"{FRIGATE_API}/api/{camera}/detect",
-                          json={"enabled": enabled}, timeout=5)
-        await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
-                          json={"enabled": enabled}, timeout=5)
-    meta = read_camera_meta()
-    if camera in meta:
-        meta[camera]["active"] = enabled
-        write_camera_meta(meta)
+    # Toggle detect + record via Frigate MQTT commands — no restart needed
+    _frigate_set_recording(camera, enabled)
 
     return {"ok": True, "camera": camera, "enabled": enabled}
 
@@ -554,16 +546,19 @@ def _camera_name_for_id(camera_id: str) -> str | None:
 
 
 def _frigate_set_recording(cam_name: str, enabled: bool):
-    """Toggle detect + record for a camera via Frigate API. No restart needed."""
+    """Toggle detect + record for a camera via Frigate MQTT commands."""
+    state = "ON" if enabled else "OFF"
     try:
-        with httpx.Client(timeout=5) as client:
-            client.post(f"{FRIGATE_API}/api/{cam_name}/detect",    json={"enabled": enabled})
-            client.post(f"{FRIGATE_API}/api/{cam_name}/recordings", json={"enabled": enabled})
+        pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
+        pub.publish(f"frigate/{cam_name}/detect/set",    state, retain=False)
+        pub.publish(f"frigate/{cam_name}/recordings/set", state, retain=False)
+        pub.disconnect()
         meta = read_camera_meta()
         if cam_name in meta:
             meta[cam_name]["active"] = enabled
             write_camera_meta(meta)
-        logger.info("Recording %s for %s", "ON" if enabled else "OFF", cam_name)
+        logger.info("Recording %s for %s (MQTT)", state, cam_name)
     except Exception as e:
         logger.warning("Could not toggle recording for %s: %s", cam_name, e)
 
