@@ -80,24 +80,40 @@ services:
         max-size: 10m
         max-file: "3"
 
+  # Filtered Docker API proxy — exposes only container read + restart to admin.
+  # Prevents admin from accessing the full Docker socket (privilege escalation risk).
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: ring-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - LOG_LEVEL=warning
+    networks:
+      - proxy-net
+
   admin:
     build: ./admin
     container_name: ring-admin
     restart: unless-stopped
     depends_on:
+      - docker-proxy
       - ring-mqtt
       - frigate
     ports:
       - "8085:8090"
+    environment:
+      - DOCKER_HOST=tcp://docker-proxy:2375
     volumes:
       - ring-mqtt-data:/ring-mqtt-data
       - frigate-config:/frigate-config
       - frigate-clips:/media/frigate
-      # Docker socket needed for container status/logs/restart.
-      # docker-socket-proxy was attempted but HAProxy requires >1024 FDs which
-      # exceeds the ASUSTOR system limit. Direct mount is acceptable since
-      # port 8085 is LAN-only and the admin process runs as non-root (uid 1001).
-      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - default
+      - proxy-net
     logging:
       options:
         max-size: 5m
@@ -109,3 +125,8 @@ volumes:
   frigate-config:
   frigate-clips:
 
+networks:
+  default: {}
+  # Isolated network shared only between admin and the Docker proxy.
+  proxy-net:
+    internal: true

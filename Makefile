@@ -1,6 +1,7 @@
-COMPOSE = docker compose -f docker-compose.yml --env-file .env
+COMPOSE        = docker compose -f docker-compose.yml --env-file .env
+COMPOSE_ASUSTOR = docker compose -f docker-compose.yml -f docker-compose.asustor.yml --env-file .env
 
-.PHONY: up down restart logs status pull init \
+.PHONY: up down restart logs status pull init asustor-up asustor-init \
         admin-deploy frigate-up frigate-logs frigate-config \
         bridge-logs auth-ui frigate-ui lint check-env
 
@@ -47,6 +48,32 @@ init:
 	@echo "Done. Stack is up."
 	@echo "Frigate UI: http://$$(hostname -I | awk '{print $$1}'):5000/"
 	@echo "Ring auth:  http://$$(hostname -I | awk '{print $$1}'):55123/"
+
+# ── ASUSTOR (low FD limit — no socket proxy) ──────────────────────────────────
+
+asustor-up:
+	$(COMPOSE_ASUSTOR) up -d
+
+asustor-init:
+	@echo "Starting mosquitto..."
+	$(COMPOSE_ASUSTOR) up -d mosquitto
+	@sleep 3
+	@echo "Starting ring-mqtt..."
+	$(COMPOSE_ASUSTOR) up -d ring-mqtt
+	@sleep 5
+	@echo "Pushing ring-mqtt config..."
+	docker cp ring-mqtt-data/config.json ring-rtsp-bridge:/data/config.json
+	docker cp ring-mqtt-data/ring-state.json ring-rtsp-bridge:/data/ring-state.json
+	@echo "Starting Frigate..."
+	$(COMPOSE_ASUSTOR) up -d frigate
+	@sleep 20
+	@echo "Pushing Frigate config..."
+	docker cp frigate-config/config.yaml ring-frigate:/config/config.yaml
+	docker restart ring-frigate
+	@echo "Starting admin..."
+	$(COMPOSE_ASUSTOR) up -d admin
+	@echo ""
+	@echo "Done. Stack is up (ASUSTOR mode, no socket proxy)."
 
 # ── Admin deploy ──────────────────────────────────────────────────────────────
 

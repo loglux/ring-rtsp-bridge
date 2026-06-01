@@ -1,0 +1,28 @@
+# ASUSTOR override — apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.asustor.yml up -d
+#
+# Why this file exists:
+#   docker-socket-proxy (HAProxy) requires ~8034 file descriptors at startup.
+#   ASUSTOR NAS enforces a hard nofile limit of 1024 per process, so the proxy
+#   crashes immediately. We replace it with a no-op busybox container that
+#   satisfies admin's depends_on without actually proxying anything.
+#   Admin falls back to the Docker socket directly via volume mount.
+#   Acceptable because port 8085 is LAN-only and admin runs as non-root (uid 1001).
+
+services:
+  docker-proxy:
+    image: busybox:latest
+    container_name: ring-docker-proxy
+    command: sleep infinity
+    restart: unless-stopped
+    networks:
+      - proxy-net
+
+  admin:
+    environment:
+      DOCKER_HOST: ""   # unset → falls back to unix:///var/run/docker.sock
+    volumes:
+      - ring-mqtt-data:/ring-mqtt-data
+      - frigate-config:/frigate-config
+      - frigate-clips:/media/frigate
+      - /var/run/docker.sock:/var/run/docker.sock
