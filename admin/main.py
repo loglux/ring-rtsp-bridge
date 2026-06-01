@@ -1,11 +1,13 @@
 import json
-import os
+import logging
 import re
+import threading
+import time
 from pathlib import Path
-from typing import Any
 
 import docker
 import httpx
+import paho.mqtt.client as mqtt
 import yaml
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -14,10 +16,11 @@ from fastapi.templating import Jinja2Templates
 app = FastAPI()
 templates = Jinja2Templates(directory="/app/templates")
 
-RING_CONFIG_PATH = Path("/ring-mqtt-data/config.json")
-GO2RTC_PATH = Path("/ring-mqtt-data/go2rtc.yaml")
+RING_CONFIG_PATH    = Path("/ring-mqtt-data/config.json")
+GO2RTC_PATH         = Path("/ring-mqtt-data/go2rtc.yaml")
 FRIGATE_CONFIG_PATH = Path("/frigate-config/config.yaml")
-FRIGATE_API = "http://ring-frigate:5001"
+CAMERA_META_PATH    = Path("/frigate-config/camera_meta.json")
+FRIGATE_API         = "http://ring-frigate:5001"
 
 SERVICES = {
     "mosquitto": "ring-rtsp-mosquitto",
@@ -27,12 +30,29 @@ SERVICES = {
 
 ALL_OBJECTS = ["person", "car", "dog", "cat", "bicycle", "motorcycle", "truck", "bird"]
 
+# Default Frigate camera config template for a Ring camera
+def ring_camera_config(camera_id: str) -> dict:
+    return {
+        "ffmpeg": {"inputs": [{
+            "path": f"rtsp://{{FRIGATE_RTSP_USER}}:{{FRIGATE_RTSP_PASSWORD}}@ring-mqtt:8554/{camera_id}_live",
+            "roles": ["detect", "record"],
+        }]},
+        "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
+        "motion": {"threshold": 25, "contour_area": 100},
+    }
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+def rtsp_camera_config(rtsp_url: str) -> dict:
+    return {
+        "ffmpeg": {"inputs": [{"path": rtsp_url, "roles": ["detect", "record"]}]},
+        "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
+        "motion": {"threshold": 25, "contour_area": 100},
+    }
+
+
+# ── file helpers ──────────────────────────────────────────────────────────────
 
 def docker_client():
     return docker.from_env()
-
 
 def container_status(name: str) -> dict:
     try:
@@ -41,17 +61,14 @@ def container_status(name: str) -> dict:
     except Exception:
         return {"status": "missing", "name": name}
 
-
 def read_ring_config() -> dict:
     try:
         return json.loads(RING_CONFIG_PATH.read_text())
     except Exception:
         return {}
 
-
 def write_ring_config(data: dict):
     RING_CONFIG_PATH.write_text(json.dumps(data, indent=2))
-
 
 def read_frigate_config() -> dict:
     try:
@@ -59,29 +76,35 @@ def read_frigate_config() -> dict:
     except Exception:
         return {}
 
-
 def write_frigate_config(data: dict):
-    FRIGATE_CONFIG_PATH.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+    FRIGATE_CONFIG_PATH.write_text(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True)
+    )
 
+def read_camera_meta() -> dict:
+    """
+    {cam_name: {battery: bool, active: bool, camera_id?: str, config: dict}}
+    Stored in the shared frigate-config volume alongside config.yaml.
+    """
+    try:
+        return json.loads(CAMERA_META_PATH.read_text())
+    except Exception:
+        return {}
+
+def write_camera_meta(data: dict):
+    CAMERA_META_PATH.write_text(json.dumps(data, indent=2))
 
 def discovered_cameras() -> list[str]:
-    """Return camera IDs found in ring-mqtt's go2rtc.yaml."""
     try:
         cfg = yaml.safe_load(GO2RTC_PATH.read_text()) or {}
-        streams = cfg.get("streams", {})
         ids: set[str] = set()
-        for key in streams:
+        for key in cfg.get("streams", {}):
             m = re.match(r"^(.+?)_(live|event)$", key)
             if m:
                 ids.add(m.group(1))
         return sorted(ids)
     except Exception:
         return []
-
-
-def frigate_cameras(fcfg: dict) -> dict:
-    return fcfg.get("cameras", {})
-
 
 def frigate_stats() -> dict:
     try:
@@ -90,53 +113,84 @@ def frigate_stats() -> dict:
     except Exception:
         return {}
 
-
 def container_logs(service_key: str, lines: int = 60) -> str:
     name = SERVICES.get(service_key, "")
     try:
         c = docker_client().containers.get(name)
         raw = c.logs(tail=lines, timestamps=False).decode("utf-8", errors="replace")
-        # strip ANSI colour codes
         return re.sub(r"\x1b\[[0-9;]*m", "", raw)
     except Exception as e:
         return f"Could not fetch logs: {e}"
 
-
 def restart_container(service_key: str):
     name = SERVICES.get(service_key, "")
-    c = docker_client().containers.get(name)
-    c.restart()
+    docker_client().containers.get(name).restart()
 
 
-# ── routes ────────────────────────────────────────────────────────────────────
+# ── camera helpers ────────────────────────────────────────────────────────────
+
+def all_known_cameras() -> dict:
+    """
+    Returns all cameras: active ones from Frigate config + inactive battery cameras from meta.
+    {name: {battery, active, config}}
+    """
+    fcfg   = read_frigate_config()
+    meta   = read_camera_meta()
+    active = fcfg.get("cameras", {})
+    result = {}
+
+    # Active cameras in Frigate
+    for name, cfg in active.items():
+        m = meta.get(name, {})
+        result[name] = {
+            "battery": m.get("battery", False),
+            "active":  True,
+            "config":  cfg,
+            "camera_id": m.get("camera_id"),
+        }
+
+    # Inactive battery cameras (in meta but not in Frigate)
+    for name, m in meta.items():
+        if name not in result and m.get("battery"):
+            result[name] = {
+                "battery":   True,
+                "active":    False,
+                "config":    m.get("config", {}),
+                "camera_id": m.get("camera_id"),
+            }
+
+    return result
+
+
+# ── pages ─────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     fcfg = read_frigate_config()
-    # redirect to setup wizard if no cameras configured
-    if not fcfg.get("cameras"):
+    cameras = all_known_cameras()
+    if not cameras:
         return RedirectResponse("/setup", status_code=302)
     statuses = {k: container_status(v) for k, v in SERVICES.items()}
-    stats = frigate_stats()
+    stats    = frigate_stats()
     ring_cfg = read_ring_config()
-    disc = discovered_cameras()
+    disc     = discovered_cameras()
     return templates.TemplateResponse(request, "index.html", {
-        "statuses": statuses,
-        "stats": stats,
-        "fcfg": fcfg,
-        "ring_cfg": ring_cfg,
-        "disc": disc,
+        "statuses":   statuses,
+        "stats":      stats,
+        "fcfg":       fcfg,
+        "cameras":    cameras,
+        "ring_cfg":   ring_cfg,
+        "disc":       disc,
         "all_objects": ALL_OBJECTS,
     })
-
 
 @app.get("/setup", response_class=HTMLResponse)
 async def setup(request: Request):
     ring_cfg = read_ring_config()
-    disc = discovered_cameras()
+    disc     = discovered_cameras()
     return templates.TemplateResponse(request, "setup.html", {
         "ring_cfg": ring_cfg,
-        "disc": disc,
+        "disc":     disc,
     })
 
 
@@ -145,22 +199,20 @@ async def setup(request: Request):
 @app.get("/api/status")
 async def api_status():
     statuses = {k: container_status(v) for k, v in SERVICES.items()}
-    stats = frigate_stats()
-    return {"services": statuses, "frigate_stats": stats}
+    stats    = frigate_stats()
+    cameras  = all_known_cameras()
+    return {"services": statuses, "frigate_stats": stats, "cameras": cameras}
 
 
-# ── API: ring connection status ───────────────────────────────────────────────
+# ── API: ring connection ──────────────────────────────────────────────────────
 
 @app.get("/api/ring-status")
 async def api_ring_status():
-    """Check if ring-mqtt is connected to Ring API and has discovered cameras."""
     svc = container_status(SERVICES["ring-mqtt"])
     if svc["status"] != "running":
         return {"connected": False, "cameras": 0, "status": svc["status"]}
-    cameras = discovered_cameras()
-    # If go2rtc.yaml has streams, ring-mqtt has authenticated and discovered devices
-    connected = len(cameras) > 0
-    # Also check logs for connection confirmation
+    cams = discovered_cameras()
+    connected = len(cams) > 0
     if not connected:
         try:
             c = docker_client().containers.get(SERVICES["ring-mqtt"])
@@ -168,46 +220,7 @@ async def api_ring_status():
             connected = "Successfully established connection to Ring API" in logs
         except Exception:
             pass
-    return {"connected": connected, "cameras": len(cameras), "status": svc["status"]}
-
-
-# ── API: camera live toggle ───────────────────────────────────────────────────
-
-def frigate_camera_state(camera: str) -> dict:
-    """Return {detect: bool, record: bool} for a camera from Frigate stats."""
-    try:
-        r = httpx.get(f"{FRIGATE_API}/api/config", timeout=3)
-        cfg = r.json()
-        cam_cfg = cfg.get("cameras", {}).get(camera, {})
-        return {
-            "detect": cam_cfg.get("detect", {}).get("enabled", True),
-            "record": cam_cfg.get("record", {}).get("enabled", True),
-        }
-    except Exception:
-        return {"detect": True, "record": True}
-
-
-@app.get("/api/camera/{camera}/state")
-async def api_camera_state(camera: str):
-    return frigate_camera_state(camera)
-
-
-@app.post("/api/camera/{camera}/live")
-async def api_camera_live(camera: str, request: Request):
-    data = await request.json()
-    enabled = bool(data.get("enabled", True))
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            f"{FRIGATE_API}/api/{camera}/detect",
-            json={"enabled": enabled},
-            timeout=5,
-        )
-        await client.post(
-            f"{FRIGATE_API}/api/{camera}/recordings",
-            json={"enabled": enabled},
-            timeout=5,
-        )
-    return {"ok": True, "camera": camera, "enabled": enabled}
+    return {"connected": connected, "cameras": len(cams), "status": svc["status"]}
 
 
 # ── API: restart ──────────────────────────────────────────────────────────────
@@ -218,7 +231,7 @@ async def api_restart(service: str):
         return JSONResponse({"error": "unknown service"}, status_code=400)
     try:
         restart_container(service)
-        return {"ok": True, "service": service}
+        return {"ok": True}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -234,28 +247,26 @@ async def api_logs(service: str, lines: int = 60):
 
 @app.get("/api/cameras")
 async def api_cameras():
-    fcfg = read_frigate_config()
     return {
         "discovered": discovered_cameras(),
-        "active": list(frigate_cameras(fcfg).keys()),
+        "active":     list(read_frigate_config().get("cameras", {}).keys()),
+        "all":        all_known_cameras(),
     }
 
 
 @app.post("/api/cameras/add")
-async def api_add_camera(camera_id: str = Form(...), camera_name: str = Form(...)):
+async def api_add_ring_camera(camera_id: str = Form(...), camera_name: str = Form(...)):
+    """Add a Ring camera — marked as battery, stored in meta, added to Frigate."""
+    cfg = ring_camera_config(camera_id)
+
+    # Save to meta (battery=True, template for future toggling)
+    meta = read_camera_meta()
+    meta[camera_name] = {"battery": True, "active": True, "camera_id": camera_id, "config": cfg}
+    write_camera_meta(meta)
+
+    # Add to Frigate config
     fcfg = read_frigate_config()
-    cameras = fcfg.setdefault("cameras", {})
-    if camera_name not in cameras:
-        cameras[camera_name] = {
-            "ffmpeg": {
-                "inputs": [{
-                    "path": f"rtsp://{{FRIGATE_RTSP_USER}}:{{FRIGATE_RTSP_PASSWORD}}@ring-mqtt:8554/{camera_id}_live",
-                    "roles": ["detect", "record"],
-                }]
-            },
-            "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
-            "motion": {"threshold": 25, "contour_area": 100},
-        }
+    fcfg.setdefault("cameras", {})[camera_name] = cfg
     write_frigate_config(fcfg)
     restart_container("frigate")
     return {"ok": True}
@@ -263,25 +274,25 @@ async def api_add_camera(camera_id: str = Form(...), camera_name: str = Form(...
 
 @app.post("/api/cameras/add-rtsp")
 async def api_add_rtsp_camera(request: Request):
+    """Add a wired IP camera by RTSP URL."""
     data = await request.json()
-    name = data.get("name", "").strip().replace(" ", "_")
+    name     = data.get("name", "").strip().replace(" ", "_")
     rtsp_url = data.get("rtsp_url", "").strip()
     if not name or not rtsp_url:
         return JSONResponse({"error": "name and rtsp_url required"}, status_code=400)
+
+    cfg = rtsp_camera_config(rtsp_url)
+
+    # Save to meta (battery=False)
+    meta = read_camera_meta()
+    meta[name] = {"battery": False, "active": True, "config": cfg}
+    write_camera_meta(meta)
+
+    # Add to Frigate config
     fcfg = read_frigate_config()
-    cameras = fcfg.setdefault("cameras", {})
-    if name in cameras:
+    if name in fcfg.get("cameras", {}):
         return JSONResponse({"error": f"Camera '{name}' already exists"}, status_code=400)
-    cameras[name] = {
-        "ffmpeg": {
-            "inputs": [{
-                "path": rtsp_url,
-                "roles": ["detect", "record"],
-            }]
-        },
-        "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
-        "motion": {"threshold": 25, "contour_area": 100},
-    }
+    fcfg.setdefault("cameras", {})[name] = cfg
     write_frigate_config(fcfg)
     restart_container("frigate")
     return {"ok": True}
@@ -289,15 +300,23 @@ async def api_add_rtsp_camera(request: Request):
 
 @app.post("/api/cameras/rename")
 async def api_rename_camera(request: Request):
-    data = await request.json()
+    data     = await request.json()
     old_name = data.get("old_name", "").strip()
     new_name = data.get("new_name", "").strip().replace(" ", "_")
     if not old_name or not new_name:
         return JSONResponse({"error": "old_name and new_name required"}, status_code=400)
-    fcfg = read_frigate_config()
+
+    # Update meta
+    meta = read_camera_meta()
+    if old_name in meta:
+        meta[new_name] = meta.pop(old_name)
+        write_camera_meta(meta)
+
+    # Update Frigate config (only if camera is currently active)
+    fcfg    = read_frigate_config()
     cameras = fcfg.get("cameras", {})
     if old_name not in cameras:
-        return JSONResponse({"error": f"Camera '{old_name}' not found"}, status_code=404)
+        return JSONResponse({"error": f"Camera '{old_name}' not found in Frigate"}, status_code=404)
     if new_name in cameras:
         return JSONResponse({"error": f"Camera '{new_name}' already exists"}, status_code=400)
     cameras[new_name] = cameras.pop(old_name)
@@ -308,6 +327,12 @@ async def api_rename_camera(request: Request):
 
 @app.post("/api/cameras/remove")
 async def api_remove_camera(camera_name: str = Form(...)):
+    # Remove from meta entirely
+    meta = read_camera_meta()
+    meta.pop(camera_name, None)
+    write_camera_meta(meta)
+
+    # Remove from Frigate config
     fcfg = read_frigate_config()
     fcfg.get("cameras", {}).pop(camera_name, None)
     write_frigate_config(fcfg)
@@ -315,28 +340,75 @@ async def api_remove_camera(camera_name: str = Form(...)):
     return {"ok": True}
 
 
+# ── API: live toggle ──────────────────────────────────────────────────────────
+
+@app.post("/api/camera/{camera}/live")
+async def api_camera_live(camera: str, request: Request):
+    data    = await request.json()
+    enabled = bool(data.get("enabled", True))
+    meta    = read_camera_meta()
+    cam_meta = meta.get(camera, {})
+
+    if cam_meta.get("battery"):
+        # Battery camera: add/remove from Frigate config entirely
+        fcfg = read_frigate_config()
+        if enabled:
+            # Restore from saved template
+            cam_cfg = cam_meta.get("config")
+            if not cam_cfg:
+                return JSONResponse({"error": "no saved config template"}, status_code=400)
+            fcfg.setdefault("cameras", {})[camera] = cam_cfg
+        else:
+            # Remove from Frigate — saves battery
+            fcfg.get("cameras", {}).pop(camera, None)
+
+        # Update active flag in meta
+        cam_meta["active"] = enabled
+        meta[camera] = cam_meta
+        write_camera_meta(meta)
+        write_frigate_config(fcfg)
+        restart_container("frigate")
+    else:
+        # Wired camera: toggle detect + record via Frigate API (no restart needed)
+        async with httpx.AsyncClient() as client:
+            await client.post(f"{FRIGATE_API}/api/{camera}/detect",
+                              json={"enabled": enabled}, timeout=5)
+            await client.post(f"{FRIGATE_API}/api/{camera}/recordings",
+                              json={"enabled": enabled}, timeout=5)
+
+    return {"ok": True, "camera": camera, "enabled": enabled}
+
+
 # ── API: detection ────────────────────────────────────────────────────────────
 
 @app.post("/api/detection")
 async def api_save_detection(request: Request):
-    data = await request.json()
+    data           = await request.json()
     global_objects = data.get("global_objects", [])
-    per_camera = data.get("per_camera", {})  # {camera_name: [objects] or None}
+    per_camera     = data.get("per_camera", {})
 
     fcfg = read_frigate_config()
     fcfg["objects"] = {"track": global_objects}
 
-    cameras = fcfg.get("cameras", {})
-    for cam_name, cam_cfg in cameras.items():
+    for cam_name, cam_cfg in fcfg.get("cameras", {}).items():
         overrides = per_camera.get(cam_name)
-        if overrides is not None:
-            # explicit per-camera list — store only if different from global
-            if sorted(overrides) != sorted(global_objects):
-                cam_cfg.setdefault("objects", {})["track"] = overrides
-            else:
-                cam_cfg.pop("objects", None)   # same as global — no override needed
+        if overrides is not None and sorted(overrides) != sorted(global_objects):
+            cam_cfg.setdefault("objects", {})["track"] = overrides
         else:
-            cam_cfg.pop("objects", None)       # cleared
+            cam_cfg.pop("objects", None)
+
+    # Also update templates in meta so they stay in sync
+    meta = read_camera_meta()
+    for cam_name, m in meta.items():
+        if cam_name not in fcfg.get("cameras", {}):
+            continue
+        overrides = per_camera.get(cam_name)
+        cfg = m.get("config", {})
+        if overrides is not None and sorted(overrides) != sorted(global_objects):
+            cfg.setdefault("objects", {})["track"] = overrides
+        else:
+            cfg.pop("objects", None)
+    write_camera_meta(meta)
 
     write_frigate_config(fcfg)
     restart_container("frigate")
@@ -350,8 +422,8 @@ async def api_save_retention(request: Request):
     data = await request.json()
     fcfg = read_frigate_config()
     record = fcfg.setdefault("record", {})
-    record.setdefault("alerts", {})["retain"] = {"days": int(data.get("alerts_days", 30))}
-    record.setdefault("detections", {})["retain"] = {"days": int(data.get("detections_days", 14))}
+    record.setdefault("alerts", {})["retain"]     = {"days": int(data.get("alerts_days", 30))}
+    record.setdefault("detections", {})["retain"]  = {"days": int(data.get("detections_days", 14))}
     write_frigate_config(fcfg)
     restart_container("frigate")
     return {"ok": True}
@@ -361,10 +433,169 @@ async def api_save_retention(request: Request):
 
 @app.post("/api/credentials")
 async def api_save_credentials(request: Request):
-    data = await request.json()
+    data     = await request.json()
     ring_cfg = read_ring_config()
     ring_cfg["livestream_user"] = data.get("user", ring_cfg.get("livestream_user", ""))
     ring_cfg["livestream_pass"] = data.get("pass", ring_cfg.get("livestream_pass", ""))
     write_ring_config(ring_cfg)
     restart_container("ring-mqtt")
-    return {"ok": True, "note": "ring-mqtt restarted. Update RING_RTSP_USER/RING_RTSP_PASS in .env and restart Frigate to apply to RTSP stream."}
+    return {"ok": True, "note": "ring-mqtt restarted. Update RING_RTSP_PASS in .env and restart Frigate."}
+
+
+# ── API: motion trigger settings ─────────────────────────────────────────────
+
+@app.get("/api/motion-settings")
+async def api_motion_settings():
+    meta = read_camera_meta()
+    result = {}
+    for name, m in meta.items():
+        if m.get("battery"):
+            result[name] = {
+                "motion_trigger": m.get("motion_trigger", True),
+                "record_seconds": m.get("record_seconds", 60),
+            }
+    return result
+
+@app.post("/api/motion-settings")
+async def api_save_motion_settings(request: Request):
+    data = await request.json()
+    meta = read_camera_meta()
+    for cam_name, settings in data.items():
+        if cam_name in meta and meta[cam_name].get("battery"):
+            meta[cam_name]["motion_trigger"]  = bool(settings.get("motion_trigger", True))
+            meta[cam_name]["record_seconds"]  = int(settings.get("record_seconds", 60))
+    write_camera_meta(meta)
+    return {"ok": True}
+
+
+# ── MQTT motion trigger ───────────────────────────────────────────────────────
+
+logger = logging.getLogger("motion_trigger")
+logging.basicConfig(level=logging.INFO)
+
+# Per-camera timer: camera_name -> threading.Timer
+_motion_timers: dict[str, threading.Timer] = {}
+_timer_lock = threading.Lock()
+
+MQTT_HOST   = "mosquitto"
+MQTT_PORT   = 1883
+RING_TOPIC  = "ring"  # base topic from ring-mqtt config
+
+
+def _camera_name_for_id(camera_id: str) -> str | None:
+    """Find the camera name in meta that matches the given Ring camera_id."""
+    for name, m in read_camera_meta().items():
+        if m.get("battery") and m.get("camera_id") == camera_id:
+            return name
+    return None
+
+
+def _enable_battery_camera(cam_name: str):
+    """Add battery camera to Frigate and restart."""
+    meta = read_camera_meta()
+    m    = meta.get(cam_name, {})
+    if not m.get("battery") or m.get("active"):
+        return
+    cfg  = m.get("config")
+    if not cfg:
+        return
+    fcfg = read_frigate_config()
+    fcfg.setdefault("cameras", {})[cam_name] = cfg
+    m["active"] = True
+    meta[cam_name] = m
+    write_camera_meta(meta)
+    write_frigate_config(fcfg)
+    try:
+        restart_container("frigate")
+        logger.info("Motion trigger: enabled %s in Frigate", cam_name)
+    except Exception as e:
+        logger.warning("Motion trigger: could not restart Frigate: %s", e)
+
+
+def _disable_battery_camera(cam_name: str):
+    """Remove battery camera from Frigate and restart."""
+    meta = read_camera_meta()
+    m    = meta.get(cam_name, {})
+    if not m.get("battery") or not m.get("active"):
+        return
+    fcfg = read_frigate_config()
+    fcfg.get("cameras", {}).pop(cam_name, None)
+    m["active"] = False
+    meta[cam_name] = m
+    write_camera_meta(meta)
+    write_frigate_config(fcfg)
+    try:
+        restart_container("frigate")
+        logger.info("Motion trigger: disabled %s in Frigate", cam_name)
+    except Exception as e:
+        logger.warning("Motion trigger: could not restart Frigate: %s", e)
+
+
+def _schedule_disable(cam_name: str, seconds: int):
+    """Cancel any existing timer and schedule a new disable."""
+    with _timer_lock:
+        old = _motion_timers.get(cam_name)
+        if old:
+            old.cancel()
+        t = threading.Timer(seconds, _disable_battery_camera, args=[cam_name])
+        t.daemon = True
+        t.start()
+        _motion_timers[cam_name] = t
+
+
+def _on_mqtt_message(client, userdata, msg):
+    topic   = msg.topic
+    payload = msg.payload.decode("utf-8", errors="replace").strip()
+
+    # ring/<location>/<...>/camera/<camera_id>/motion/state
+    m = re.search(r"/camera/([^/]+)/motion/state$", topic)
+    if not m:
+        return
+
+    camera_id = m.group(1)
+    cam_name  = _camera_name_for_id(camera_id)
+    if not cam_name:
+        return
+
+    meta     = read_camera_meta()
+    cam_meta = meta.get(cam_name, {})
+    if not cam_meta.get("motion_trigger", True):
+        return  # motion trigger disabled for this camera
+
+    record_seconds = cam_meta.get("record_seconds", 60)
+
+    if payload.upper() == "ON":
+        logger.info("Motion ON for %s (camera_id=%s) — enabling stream", cam_name, camera_id)
+        _enable_battery_camera(cam_name)
+        _schedule_disable(cam_name, record_seconds)
+    elif payload.upper() == "OFF":
+        # Extend the timer: keep recording for record_seconds after motion stops
+        logger.info("Motion OFF for %s — will disable in %ds", cam_name, record_seconds)
+        _schedule_disable(cam_name, record_seconds)
+
+
+def _start_mqtt_listener():
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.on_message = _on_mqtt_message
+
+    def on_connect(c, userdata, flags, rc, properties=None):
+        if rc == 0:
+            c.subscribe(f"{RING_TOPIC}/#")
+            logger.info("MQTT motion trigger connected, subscribed to %s/#", RING_TOPIC)
+        else:
+            logger.warning("MQTT motion trigger connect failed rc=%d", rc)
+
+    client.on_connect = on_connect
+
+    while True:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            client.loop_forever()
+        except Exception as e:
+            logger.warning("MQTT motion trigger error: %s — retrying in 10s", e)
+            time.sleep(10)
+
+
+# Start MQTT listener in background thread at startup
+_mqtt_thread = threading.Thread(target=_start_mqtt_listener, daemon=True)
+_mqtt_thread.start()

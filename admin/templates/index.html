@@ -74,39 +74,73 @@
   <!-- ══ DASHBOARD ══════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='dashboard'" x-cloak>
 
-    <!-- Camera cards -->
+    <!-- Camera cards — all cameras (active + inactive battery) -->
     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
-      <template x-for="(cam, name) in cameraStats" :key="name">
-        <div class="card p-5">
-          <div class="flex items-start justify-between mb-4">
+      <template x-for="(meta, name) in allCameras" :key="name">
+        <div class="card p-5" :class="!meta.active && meta.battery ? 'opacity-60' : ''">
+          <div class="flex items-start justify-between mb-3">
             <div>
-              <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 mb-0.5">Camera</p>
+              <div class="flex items-center gap-2 mb-0.5">
+                <p class="text-[11px] font-semibold uppercase tracking-widest text-zinc-400">Camera</p>
+                <!-- Battery badge -->
+                <span x-show="meta.battery"
+                      class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">
+                  🔋 battery
+                </span>
+              </div>
               <p class="text-base font-bold" x-text="name"></p>
+              <!-- Motion trigger info for battery cameras -->
+              <p x-show="meta.battery && !meta.active"
+                 class="text-xs text-zinc-400 mt-0.5">Waiting for motion…</p>
             </div>
-            <button @click="toggleLive(name)"
+            <!-- Live toggle -->
+            <button @click="toggleLive(name, meta.battery)"
                     :disabled="togglingLive===name"
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                    :class="liveState[name]!==false
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex-shrink-0"
+                    :class="meta.active
                       ? 'bg-emerald-50 text-emerald-700 hover:bg-red-50 hover:text-red-600'
                       : 'bg-zinc-100 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700'">
               <span class="w-1.5 h-1.5 rounded-full"
-                    :class="liveState[name]!==false ? 'bg-emerald-400' : 'bg-zinc-400'"></span>
-              <span x-show="togglingLive!==name" x-text="liveState[name]!==false ? 'Live' : 'Paused'"></span>
+                    :class="meta.active ? 'bg-emerald-400' : 'bg-zinc-400'"></span>
+              <span x-show="togglingLive!==name" x-text="meta.active ? 'Live' : 'Paused'"></span>
               <span x-show="togglingLive===name">…</span>
             </button>
           </div>
-          <div class="grid grid-cols-3 gap-3 text-center">
+          <!-- Stats — only show when active -->
+          <div x-show="meta.active" class="grid grid-cols-3 gap-3 text-center">
             <div class="bg-zinc-50 rounded-xl py-2.5">
-              <p class="text-lg font-bold text-brand" x-text="(cam.camera_fps||0).toFixed(1)"></p>
+              <p class="text-lg font-bold text-brand"
+                 x-text="(cameraStats[name]?.camera_fps||0).toFixed(1)"></p>
               <p class="text-[10px] text-zinc-400 mt-0.5">cam fps</p>
             </div>
             <div class="bg-zinc-50 rounded-xl py-2.5">
-              <p class="text-lg font-bold text-brand" x-text="(cam.detection_fps||0).toFixed(1)"></p>
+              <p class="text-lg font-bold text-brand"
+                 x-text="(cameraStats[name]?.detection_fps||0).toFixed(1)"></p>
               <p class="text-[10px] text-zinc-400 mt-0.5">detect</p>
             </div>
             <div class="bg-zinc-50 rounded-xl py-2.5">
-              <p class="text-lg font-bold text-brand" x-text="(cam.process_fps||0).toFixed(1)"></p>
+              <p class="text-lg font-bold text-brand"
+                 x-text="(cameraStats[name]?.process_fps||0).toFixed(1)"></p>
               <p class="text-[10px] text-zinc-400 mt-0.5">process</p>
+            </div>
+          </div>
+          <!-- Motion trigger settings for battery cameras -->
+          <div x-show="meta.battery" class="mt-3 pt-3 border-t border-zinc-100">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-zinc-500">Auto-record on motion</span>
+              <button @click="toggleMotionTrigger(name)"
+                      class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0"
+                      :class="motionTrigger[name] ? 'bg-brand' : 'bg-zinc-300'">
+                <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform"
+                      :class="motionTrigger[name] ? 'translate-x-4' : 'translate-x-0.5'"></span>
+              </button>
+            </div>
+            <div x-show="motionTrigger[name]" class="flex items-center gap-2 mt-2">
+              <span class="text-xs text-zinc-400">Keep alive</span>
+              <input type="number" min="10" max="300" x-model="recordSeconds[name]"
+                     @change="saveMotionSettings()"
+                     class="w-16 text-xs px-2 py-1 border border-zinc-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-brand/30">
+              <span class="text-xs text-zinc-400">sec after motion</span>
             </div>
           </div>
         </div>
@@ -411,11 +445,13 @@ function app() {
     setTab(id) { this.activeTab=id; localStorage.setItem('ring-tab',id); },
 
     // ── state ──────────────────────────────────────────────────────────
-    services:    {{ statuses | tojson }},
-    cameraStats: {},
-    detectorStats: {},
-    liveState:   {},
+    services:     {{ statuses | tojson }},
+    cameraStats:  {},
+    detectorStats:{},
+    allCameras:   {{ cameras | tojson }},
     togglingLive: null,
+    motionTrigger:{},
+    recordSeconds:{},
 
     activeCameras:     {{ (fcfg.cameras or {}).keys() | list | tojson }},
     discoveredCameras: {{ disc | tojson }},
@@ -438,14 +474,29 @@ function app() {
 
     // ── init ───────────────────────────────────────────────────────────
     async init() {
-      // seed per-camera overrides
+      // seed per-camera detection overrides
       const camCfg = {{ (fcfg.get('cameras',{})) | tojson }};
       for (const [name, cfg] of Object.entries(camCfg)) {
         const objs = cfg?.objects?.track;
         this.cameraOverrideEnabled[name] = !!objs;
         this.cameraObjects[name] = objs ? [...objs] : [...this.trackedObjects];
-        this.liveState[name] = true; // assume live until API says otherwise
       }
+      // seed motion trigger settings
+      for (const [name, m] of Object.entries(this.allCameras)) {
+        if (m.battery) {
+          this.motionTrigger[name] = true;   // default on
+          this.recordSeconds[name] = 60;
+        }
+      }
+      // load saved motion settings from API
+      try {
+        const r = await fetch('/api/motion-settings');
+        const d = await r.json();
+        for (const [name, s] of Object.entries(d)) {
+          this.motionTrigger[name]  = s.motion_trigger;
+          this.recordSeconds[name]  = s.record_seconds;
+        }
+      } catch {}
       await this.refreshStatus();
       setInterval(() => this.refreshStatus(), 10000);
       if (this.activeTab === 'logs') this.fetchLogs();
@@ -456,15 +507,16 @@ function app() {
       try {
         const r = await fetch('/api/status');
         const d = await r.json();
-        this.services = d.services;
+        this.services      = d.services;
         this.cameraStats   = d.frigate_stats?.cameras   || {};
         this.detectorStats = d.frigate_stats?.detectors || {};
+        if (d.cameras) this.allCameras = d.cameras;
       } catch {}
     },
 
     // ── live toggle ────────────────────────────────────────────────────
     async toggleLive(name) {
-      const current = this.liveState[name] !== false;
+      const current = this.allCameras[name]?.active !== false;
       this.togglingLive = name;
       try {
         await fetch(`/api/camera/${name}/live`, {
@@ -472,8 +524,28 @@ function app() {
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({enabled: !current}),
         });
-        this.liveState[name] = !current;
+        if (this.allCameras[name])
+          this.allCameras[name] = {...this.allCameras[name], active: !current};
       } finally { this.togglingLive = null; }
+    },
+
+    // ── motion trigger ─────────────────────────────────────────────────
+    toggleMotionTrigger(name) {
+      this.motionTrigger[name] = !this.motionTrigger[name];
+      this.saveMotionSettings();
+    },
+    async saveMotionSettings() {
+      const payload = {};
+      for (const [name, m] of Object.entries(this.allCameras)) {
+        if (m.battery) payload[name] = {
+          motion_trigger: !!this.motionTrigger[name],
+          record_seconds: parseInt(this.recordSeconds[name]) || 60,
+        };
+      }
+      await fetch('/api/motion-settings', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
     },
 
     // ── service ops ────────────────────────────────────────────────────
@@ -498,7 +570,7 @@ function app() {
         const d = await r.json();
         if (d.error){this.rtspError=d.error; return;}
         this.activeCameras.push(this.newRtspName);
-        this.liveState[this.newRtspName] = true;
+        this.allCameras[this.newRtspName] = {battery:false, active:true, config:{}};
         this.newRtspName=''; this.newRtspUrl='';
       } catch {this.rtspError='Request failed';}
       finally {this.addingRtsp=false;}
@@ -511,7 +583,7 @@ function app() {
       fd.append('camera_id', id); fd.append('camera_name', name);
       await fetch('/api/cameras/add',{method:'POST',body:fd});
       this.activeCameras.push(name);
-      this.liveState[name] = true;
+      this.allCameras[name] = {battery:true, active:true, camera_id:id, config:{}};
       delete this.newCameraNames[id];
     },
 

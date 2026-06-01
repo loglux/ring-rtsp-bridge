@@ -32,6 +32,9 @@ def client(tmp_path):
     go2rtc = tmp_path / "go2rtc.yaml"
     go2rtc.write_text("streams:\n  abc123_live: exec://test\n")
 
+    camera_meta = tmp_path / "camera_meta.json"
+    camera_meta.write_text("{}")
+
     mock_container = MagicMock()
     mock_container.status = "running"
     mock_container.logs.return_value = b"Successfully established connection to Ring API"
@@ -39,13 +42,19 @@ def client(tmp_path):
     mock_docker = MagicMock()
     mock_docker.containers.get.return_value = mock_container
 
+    templates_dir = str(Path(__file__).parent.parent / "templates")
+
     with patch("main.RING_CONFIG_PATH", ring_cfg), \
          patch("main.FRIGATE_CONFIG_PATH", frigate_cfg), \
          patch("main.GO2RTC_PATH", go2rtc), \
+         patch("main.CAMERA_META_PATH", camera_meta), \
          patch("main.docker_client", return_value=mock_docker), \
          patch("main.frigate_stats", return_value={}), \
-         patch("main.restart_container"):
+         patch("main.restart_container"), \
+         patch("main.templates") as mock_tpl:
         from main import app
+        from fastapi.templating import Jinja2Templates
+        mock_tpl.TemplateResponse = Jinja2Templates(directory=templates_dir).TemplateResponse
         yield TestClient(app)
 
 
