@@ -113,8 +113,9 @@ def ring_camera_config(camera_id: str, battery: bool = True) -> dict:
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
         "motion": {"threshold": 25, "contour_area": 100},
     }
-    if battery:
-        cfg["enabled"] = False  # disabled by default; toggled on motion
+    # battery cameras must stay enabled:true in Frigate config —
+    # Frigate 0.17 blocks MQTT enable/disable if config has enabled:false.
+    # We disable them via MQTT after startup instead (see _disable_battery_cameras_on_startup).
     return cfg
 
 def rtsp_camera_config(rtsp_url: str) -> dict:
@@ -764,7 +765,9 @@ def _frigate_set_camera_enabled(cam_name: str, enabled: bool):
         pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
         pub.loop_start()
-        info = pub.publish(f"frigate/{cam_name}/enabled/set", state, retain=False)
+        # OFF is retained so Frigate gets it after any restart (keeps camera idle).
+        # ON is not retained — ephemeral, only for the current recording window.
+        info = pub.publish(f"frigate/{cam_name}/enabled/set", state, retain=(not enabled))
         info.wait_for_publish(timeout=5)
         pub.loop_stop()
         pub.disconnect()
@@ -857,6 +860,30 @@ def _on_mqtt_message(client, userdata, msg):
             logger.info("Battery level for %s: %d%%", cam_name, level)
 
 
+def _disable_battery_cameras():
+    """Send enabled/set OFF for all battery cameras via the shared MQTT client.
+    Called on connect/reconnect so cameras are always OFF between motion events.
+    Uses a short-lived publish client to avoid threading issues with the listener client.
+    """
+    meta = read_camera_meta()
+    battery_cams = [name for name, m in meta.items() if m.get("battery")]
+    if not battery_cams:
+        return
+    try:
+        pub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        pub.connect(MQTT_HOST, MQTT_PORT, keepalive=10)
+        pub.loop_start()
+        for cam_name in battery_cams:
+            # retain=True so Frigate receives OFF even if it subscribes after this publish
+            info = pub.publish(f"frigate/{cam_name}/enabled/set", "OFF", retain=True)
+            info.wait_for_publish(timeout=5)
+            logger.info("Startup: disabled battery camera %s in Frigate", cam_name)
+        pub.loop_stop()
+        pub.disconnect()
+    except Exception as e:
+        logger.warning("Could not disable battery cameras on startup: %s", e)
+
+
 def _start_mqtt_listener():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = _on_mqtt_message
@@ -865,6 +892,10 @@ def _start_mqtt_listener():
         if rc == 0:
             c.subscribe(f"{RING_TOPIC}/#")
             logger.info("MQTT motion trigger connected, subscribed to %s/#", RING_TOPIC)
+            # Disable all battery cameras in Frigate via MQTT on (re)connect.
+            # Frigate 0.17 requires enabled:true in config for MQTT toggling to work,
+            # so we can't set enabled:false in config. Instead we disable via MQTT here.
+            _disable_battery_cameras()
         else:
             logger.warning("MQTT motion trigger connect failed rc=%d", rc)
 
