@@ -118,6 +118,16 @@ Battery cameras use an event-driven flow to avoid draining the battery with a co
 
 > `_event` (ring-mqtt's pre-recorded cloud clip stream) requires a Ring Protect subscription and is not used here. We use `_live` only, triggered on demand.
 
+#### Important: Frigate config vs runtime state
+
+Battery cameras must have **`enabled: true`** (or no `enabled` field) in Frigate's `config.yaml`. Frigate 0.17 blocks MQTT enable/disable commands if a camera has `enabled: false` in its config — the command silently fails. The "disabled between events" state is achieved entirely at runtime via MQTT:
+
+- On admin startup → `frigate/<cam>/enabled/set OFF` (retained) is published to MQTT. Frigate receives it and stops ffmpeg even if it restarts later.
+- On motion event → `frigate/<cam>/enabled/set ON` (not retained) — ephemeral, only for the recording window.
+- After recording → `frigate/<cam>/enabled/set OFF` (retained) — resets the retained state back to idle.
+
+This means after any Frigate restart, cameras automatically return to the disabled/idle state when admin reconnects to MQTT.
+
 The admin panel shows each battery camera's state:
 - **🟡 Ready** — camera disabled in Frigate, Ring is idle and reporting events
 - **🟢 Recording** — live stream active, Frigate is recording right now
