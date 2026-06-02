@@ -252,7 +252,9 @@ def all_known_cameras() -> dict:
         # wired cameras:   active = True (always on)
         is_battery = m.get("battery", False)
         if is_battery:
-            is_active = cfg.get("enabled", True)  # default True if not set
+            # Runtime state tracked in camera_meta (toggled via MQTT).
+            # Frigate config no longer has enabled:false — see ring_camera_config().
+            is_active = m.get("active", False)
         else:
             is_active = True
         result[name] = {
