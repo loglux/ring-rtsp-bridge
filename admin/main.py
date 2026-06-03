@@ -837,8 +837,10 @@ def _on_mqtt_message(client, userdata, msg):
                 _frigate_set_camera_enabled(cam_name, True)
             _schedule_disable(cam_name, record_seconds)
         elif payload.upper() == "OFF" and event_type == "motion":
-            logger.info("Motion OFF — %s, stopping in %ds", cam_name, record_seconds)
-            _schedule_disable(cam_name, record_seconds)
+            # Don't reset the timer on motion OFF — let the ON timer expire naturally.
+            # Resetting here doubles the effective recording window (motion_duration + record_seconds)
+            # and drains battery unnecessarily.
+            logger.info("Motion OFF — %s (timer unchanged)", cam_name)
         return
 
     # info/state → battery level
