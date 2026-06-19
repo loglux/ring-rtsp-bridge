@@ -106,10 +106,23 @@ def _go2rtc_rtsp_credentials() -> tuple[str, str]:
 def ring_camera_config(camera_id: str, battery: bool = True) -> dict:
     user, password = _go2rtc_rtsp_credentials()
     cfg = {
-        "ffmpeg": {"inputs": [{
-            "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_live",
-            "roles": ["detect", "record"],
-        }]},
+        "ffmpeg": {
+            "inputs": [{
+                "path": f"rtsp://{user}:{password}@ring-mqtt:8554/{camera_id}_live",
+                "roles": ["detect", "record"],
+            }],
+            # Ring cameras send H.264 with data partitioning (an obscure H.264 feature
+            # not supported by ffmpeg or browsers). Stream-copying those frames into
+            # recordings produces unplayable files. Re-encode with libx264 to strip them.
+            "output_args": {
+                "record": [
+                    "-f", "segment", "-segment_time", "10",
+                    "-segment_format", "mp4", "-reset_timestamps", "1", "-strftime", "1",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                    "-c:a", "aac",
+                ],
+            },
+        },
         "detect": {"enabled": True, "width": 640, "height": 360, "fps": 5},
         "motion": {"threshold": 25, "contour_area": 100},
     }
