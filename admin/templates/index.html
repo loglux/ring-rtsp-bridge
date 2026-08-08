@@ -321,6 +321,31 @@
         </div>
       </template>
     </div>
+
+    <!-- Watchdog activity -->
+    <div class="card p-5 mt-3">
+      <div class="flex items-center justify-between mb-3">
+        <p class="section-title mb-0">Watchdog activity</p>
+        <span class="text-[10px] text-zinc-500 font-mono" x-show="watchdogEvents.length"
+              x-text="watchdogEvents.length + ' event' + (watchdogEvents.length===1?'':'s') + ' recorded'"></span>
+      </div>
+      <div x-show="!watchdogEvents.length" class="text-xs text-zinc-500">
+        No auto-restarts yet — scheduled restart, motion-silence and detector-stall watchdogs are all quiet.
+      </div>
+      <div x-show="watchdogEvents.length" class="space-y-1.5 max-h-56 overflow-y-auto">
+        <template x-for="(e, i) in watchdogEvents.slice(0, 20)" :key="i">
+          <div class="flex items-center gap-2.5 text-xs py-1.5 px-2 rounded-lg"
+               :class="e.detail.startsWith('restart failed') ? 'bg-red-500/[0.07]' : 'bg-[#0d1020]'">
+            <span class="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  :class="e.detail.startsWith('restart failed') ? 'bg-red-400' : 'bg-amber-400'"></span>
+            <span class="font-mono font-semibold text-zinc-200 flex-shrink-0" x-text="e.service"></span>
+            <span class="text-zinc-500 flex-shrink-0" x-text="WATCHDOG_KIND_LABEL[e.kind] || e.kind"></span>
+            <span class="text-zinc-400 truncate" x-text="e.detail"></span>
+            <span class="ml-auto text-zinc-500 font-mono flex-shrink-0" x-text="fmtTime(e.ts)"></span>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 
   <!-- ══ CAMERAS ════════════════════════════════════════════════════════ -->
@@ -839,6 +864,13 @@ function app() {
     savingDetection: false, savingRetention: false, savingCredentials: false,
     saved: null, restarting: null,
 
+    watchdogEvents: [],
+    WATCHDOG_KIND_LABEL: {
+      scheduled_restart: 'scheduled restart',
+      motion_silence:    'motion silence',
+      detector_stall:    'detector stall',
+    },
+
     async init() {
       const camCfg = {{ (fcfg.get('cameras',{})) | tojson }};
       for (const [name, cfg] of Object.entries(camCfg)) {
@@ -848,8 +880,18 @@ function app() {
       }
       await this.refreshStatus();
       setInterval(() => this.refreshStatus(), 10000);
+      await this.loadWatchdogEvents();
+      setInterval(() => this.loadWatchdogEvents(), 5 * 60000);
       if (this.activeTab === 'logs') this.fetchLogs();
       if (this.activeTab === 'recordings') { this._recLoaded = true; this.loadRecordingsTab(); }
+    },
+
+    async loadWatchdogEvents() {
+      try {
+        const r = await fetch('/api/watchdog/events');
+        const d = await r.json();
+        this.watchdogEvents = d.events || [];
+      } catch {}
     },
 
     async loadRecordingsTab() {

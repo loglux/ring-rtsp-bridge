@@ -88,6 +88,7 @@ FRIGATE_CLIPS_PATH      = Path("/media/frigate/clips")
 FRIGATE_RECORDINGS_PATH = Path("/media/frigate/recordings")
 FRIGATE_EXPORTS_PATH    = Path("/media/frigate/exports")
 FRIGATE_API         = "http://ring-frigate:5000"
+WATCHDOG_EVENTS_PATH = Path("/frigate-config/watchdog_events.json")
 
 try:
     FRIGATE_EXPORTS_PATH.mkdir(parents=True, exist_ok=True)
@@ -956,6 +957,29 @@ RING_TOPIC = "ring"
 _motion_timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
 
+# ── watchdog event history (for the "System health" panel) ─────────────────────
+_WATCHDOG_EVENTS_MAX = 200
+
+def _read_watchdog_events() -> list[dict]:
+    try:
+        return json.loads(WATCHDOG_EVENTS_PATH.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def _record_watchdog_event(kind: str, service: str, detail: str):
+    events = _read_watchdog_events()
+    events.append({"ts": _time.time(), "kind": kind, "service": service, "detail": detail})
+    events = events[-_WATCHDOG_EVENTS_MAX:]
+    try:
+        WATCHDOG_EVENTS_PATH.write_text(json.dumps(events))
+    except OSError as e:
+        logger.warning("Failed to persist watchdog event: %s", e)
+
+
+@app.get("/api/watchdog/events")
+async def api_watchdog_events():
+    return {"events": list(reversed(_read_watchdog_events()))}
+
 # ── push-channel watchdog ────────────────────────────────────────────────────
 # ring-mqtt occasionally loses its push connection to Ring cloud silently — no
 # error, warning, or reconnect is ever logged. REST polling (info/state) and
@@ -1168,8 +1192,10 @@ def _start_motion_watchdog():
         )
         try:
             restart_container("ring-mqtt")
+            _record_watchdog_event("motion_silence", "ring-mqtt", f"no motion/ding for {silence/3600:.1f}h")
         except Exception as e:
             logger.warning("Watchdog restart of ring-mqtt failed: %s", e)
+            _record_watchdog_event("motion_silence", "ring-mqtt", f"restart failed: {e}")
         # Give it a fresh window regardless of outcome — avoids restart-looping
         # every check_interval if Ring cloud itself is down.
         with _watchdog_lock:
@@ -1193,8 +1219,10 @@ def _start_scheduled_restart():
         logger.info("Scheduled restart of ring-mqtt (every %.1fh)", SCHEDULED_RESTART_HOURS)
         try:
             restart_container("ring-mqtt")
+            _record_watchdog_event("scheduled_restart", "ring-mqtt", f"routine restart (every {SCHEDULED_RESTART_HOURS:.0f}h)")
         except Exception as e:
             logger.warning("Scheduled restart of ring-mqtt failed: %s", e)
+            _record_watchdog_event("scheduled_restart", "ring-mqtt", f"restart failed: {e}")
         with _watchdog_lock:
             _last_motion_seen = _time.time()
 
@@ -1233,14 +1261,17 @@ def _start_frigate_detector_watchdog():
         status = container_status(SERVICES["frigate"])
         if status["status"] != "running":
             continue
+        stall_minutes = (_time.time() - _detector_stall_since) / 60
         logger.warning(
             "Frigate detector stalled for %.0fm (frames flowing, zero detections) — restarting frigate",
-            (_time.time() - _detector_stall_since) / 60,
+            stall_minutes,
         )
         try:
             restart_container("frigate")
+            _record_watchdog_event("detector_stall", "frigate", f"stalled {stall_minutes:.0f}m (frames flowing, zero detections)")
         except Exception as e:
             logger.warning("Watchdog restart of frigate failed: %s", e)
+            _record_watchdog_event("detector_stall", "frigate", f"restart failed: {e}")
         _detector_stall_since = None
 
 
