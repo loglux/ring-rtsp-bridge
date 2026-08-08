@@ -404,3 +404,36 @@ def test_mqtt_battery_level_saved(env):
 
     meta = json.loads(env["meta"].read_text())
     assert meta["test_cam"]["battery_level"] == 72
+
+
+# ── auth guard: /api/set-password ───────────────────────────────────────────
+
+def test_set_password_allowed_without_session_when_unset(client, tmp_path):
+    c, _ = client
+    auth_path = tmp_path / "auth.json"
+    with patch.object(main, "AUTH_CONFIG_PATH", auth_path):
+        r = c.post("/api/set-password", json={"password": "supersecret1"})
+    assert r.status_code == 200
+    assert json.loads(auth_path.read_text())["password_hash"]
+
+
+def test_set_password_rejected_without_session_once_set(client, tmp_path):
+    c, _ = client
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(json.dumps({"password_hash": main._hash_password("existing1")}))
+    with patch.object(main, "AUTH_CONFIG_PATH", auth_path):
+        r = c.post("/api/set-password", json={"password": "newpassword1"})
+    assert r.status_code == 401
+    assert main._verify_password("existing1", json.loads(auth_path.read_text())["password_hash"])
+
+
+def test_set_password_allowed_with_valid_session_once_set(client, tmp_path):
+    c, _ = client
+    auth_path = tmp_path / "auth.json"
+    auth_path.write_text(json.dumps({"password_hash": main._hash_password("existing1")}))
+    tok = main._new_session()
+    c.cookies.set("ring_session", tok)
+    with patch.object(main, "AUTH_CONFIG_PATH", auth_path):
+        r = c.post("/api/set-password", json={"password": "newpassword1"})
+    assert r.status_code == 200
+    assert main._verify_password("newpassword1", json.loads(auth_path.read_text())["password_hash"])

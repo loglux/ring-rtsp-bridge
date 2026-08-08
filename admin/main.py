@@ -66,11 +66,19 @@ def _valid_session(tok: str | None) -> bool:
 
 @app.middleware("http")
 async def _auth_guard(request: Request, call_next):
-    public = {"/login", "/setup", "/api/set-password", "/api/ring-status"}
+    public = {"/login", "/setup", "/api/ring-status"}
     if request.url.path in public:
         return await call_next(request)
+    has_password = bool(_read_auth().get("password_hash"))
+    if request.url.path == "/api/set-password":
+        # Only reachable without a session during first-run (no password set yet).
+        # Once a password exists, changing it requires being logged in — otherwise
+        # this endpoint would be a permanent, unauthenticated way to take over admin.
+        if not has_password or _valid_session(request.cookies.get("ring_session")):
+            return await call_next(request)
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     # No password set → no auth required (backward compat / first run)
-    if not _read_auth().get("password_hash"):
+    if not has_password:
         return await call_next(request)
     if _valid_session(request.cookies.get("ring_session")):
         return await call_next(request)
