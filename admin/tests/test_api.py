@@ -360,15 +360,19 @@ def test_mqtt_motion_on_enables_camera_and_schedules_disable(env):
     mock_sched.assert_called_once_with("test_cam", 120)
 
 
-def test_mqtt_motion_off_schedules_disable(env):
+def test_mqtt_motion_off_leaves_disable_timer_unchanged(env):
+    # Resetting the timer on motion OFF would double the effective recording
+    # window (motion duration + record_seconds) and drain battery cameras
+    # unnecessarily — see main._on_mqtt_message.
     with patch.object(main, "CAMERA_META_PATH", env["meta"]), \
-         patch.object(main, "_frigate_set_camera_enabled"), \
+         patch.object(main, "_frigate_set_camera_enabled") as mock_enable, \
          patch.object(main, "_schedule_disable") as mock_sched, \
          patch.object(main, "_record_motion_event"):
         main._on_mqtt_message(None, None,
             _FakeMsg("ring/loc1/camera/abc123/motion/state", "OFF"))
 
-    mock_sched.assert_called_once_with("test_cam", 120)
+    mock_enable.assert_not_called()
+    mock_sched.assert_not_called()
 
 
 def test_mqtt_ding_triggers_record(env):
