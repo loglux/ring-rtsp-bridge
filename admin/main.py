@@ -89,8 +89,11 @@ FRIGATE_RECORDINGS_PATH = Path("/media/frigate/recordings")
 FRIGATE_EXPORTS_PATH    = Path("/media/frigate/exports")
 FRIGATE_API         = "http://ring-frigate:5000"
 
-FRIGATE_EXPORTS_PATH.mkdir(parents=True, exist_ok=True)
-app.mount("/clips", StaticFiles(directory=str(FRIGATE_EXPORTS_PATH)), name="clips")
+try:
+    FRIGATE_EXPORTS_PATH.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass  # e.g. /media/frigate not mounted (local dev, tests) — dir is created by entrypoint.sh in the container
+app.mount("/clips", StaticFiles(directory=str(FRIGATE_EXPORTS_PATH), check_dir=False), name="clips")
 
 SERVICES = {
     "mosquitto": "ring-rtsp-mosquitto",
