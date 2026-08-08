@@ -1,7 +1,11 @@
 #!/bin/sh
 # Fix ownership of config volumes so the non-root user can write to them.
-# /media/frigate (clips) is intentionally skipped — it can contain many files.
+# /media/frigate (clips/recordings) is intentionally skipped — it can contain
+# many files. exports/ is small and admin writes generated clips there, so it
+# gets its own targeted chown.
 chown -R appuser:appgroup /ring-mqtt-data /frigate-config 2>/dev/null || true
+mkdir -p /media/frigate/exports 2>/dev/null || true
+chown appuser:appgroup /media/frigate/exports 2>/dev/null || true
 
 # Grant appuser access to the Docker socket regardless of host GID.
 if [ -S /var/run/docker.sock ]; then

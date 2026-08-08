@@ -2,7 +2,7 @@ COMPOSE        = docker compose -f docker-compose.yml --env-file .env
 COMPOSE_ASUSTOR = docker compose -f docker-compose.yml -f docker-compose.asustor.yml --env-file .env
 
 .PHONY: up down restart logs status pull init asustor-up asustor-init \
-        admin-deploy frigate-up frigate-logs frigate-config \
+        admin-deploy asustor-admin-deploy frigate-up frigate-logs frigate-config \
         bridge-logs auth-ui frigate-ui lint check-env
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -78,8 +78,16 @@ asustor-init:
 # ── Admin deploy ──────────────────────────────────────────────────────────────
 
 # Rebuild admin image and recreate container (docker restart won't apply a new image).
+# On ASUSTOR use `asustor-admin-deploy` instead — this target's plain $(COMPOSE)
+# recreates docker-proxy from the base compose file too (admin depends_on it),
+# silently swapping the ASUSTOR busybox stand-in for the real HAProxy socket
+# proxy, which crash-loops on ASUSTOR's FD limit and breaks admin's own Docker
+# access (restart/logs buttons) without any obvious error at deploy time.
 admin-deploy:
 	$(COMPOSE) up -d --build admin
+
+asustor-admin-deploy:
+	$(COMPOSE_ASUSTOR) up -d --build admin
 
 # ── Frigate config update ─────────────────────────────────────────────────────
 

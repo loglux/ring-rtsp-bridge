@@ -595,6 +595,171 @@
     </div>
   </div>
 
+  <!-- ══ RECORDINGS ═════════════════════════════════════════════════════ -->
+  <div x-show="activeTab==='recordings'" x-cloak class="space-y-4">
+
+    <!-- What's actually being saved, per camera -->
+    <div class="card p-5">
+      <p class="section-title">What we're saving</p>
+      <p class="section-sub">Recording behavior per camera — battery cameras only record on a Ring motion/ding event; wired cameras record continuously. Retention defaults to the <button @click="setTab('retention')" class="text-sky-400 hover:text-sky-300 underline">global policy</button> unless overridden below.</p>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <template x-for="(s, name) in recSummary" :key="name">
+          <div class="p-3.5 bg-[#0d1020] border border-white/[0.06] rounded-xl">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-semibold text-zinc-200" x-text="name"></span>
+              <div class="flex items-center gap-1.5">
+                <span x-show="s.has_override" class="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-violet-500/10 text-violet-400 border-violet-500/25">custom</span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border"
+                      :class="s.battery ? 'bg-amber-500/10 text-amber-400 border-amber-500/25' : 'bg-sky-500/10 text-sky-400 border-sky-500/25'"
+                      x-text="s.mode"></span>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-zinc-500 font-mono mb-3">
+              <span>Stored now</span>
+              <span class="text-zinc-300" x-text="fmtSize(s.size_bytes)+' / '+s.segment_count+' segments'"></span>
+              <template x-if="s.earliest">
+                <span>Covers</span>
+              </template>
+              <template x-if="s.earliest">
+                <span class="text-zinc-300" x-text="fmtTime(s.earliest)+' → '+fmtTime(s.latest)"></span>
+              </template>
+            </div>
+            <div class="flex items-end gap-2">
+              <div class="flex-1">
+                <label class="block text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Continuous (days, 0=off)</label>
+                <input type="number" min="0" max="60" x-model.number="retentionEdit[name].continuous_days"
+                       class="w-full px-2 py-1.5 border border-white/[0.12] rounded-lg text-xs bg-[#09090b] text-zinc-200 font-mono">
+              </div>
+              <div class="flex-1">
+                <label class="block text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Motion (days)</label>
+                <input type="number" min="1" max="60" x-model.number="retentionEdit[name].motion_days"
+                       class="w-full px-2 py-1.5 border border-white/[0.12] rounded-lg text-xs bg-[#09090b] text-zinc-200 font-mono">
+              </div>
+              <button @click="saveCameraRetention(name)" :disabled="savingCameraRetention===name"
+                      class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 hover:bg-sky-500/25 disabled:opacity-50">
+                <span x-show="savingCameraRetention!==name">Save</span>
+                <span x-show="savingCameraRetention===name">…</span>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="card p-5">
+      <div class="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Camera</label>
+          <select x-model="recCamera" @change="loadRecordingsForCamera()"
+                  class="px-3 py-2 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200">
+            <template x-for="name in Object.keys(allCameras)" :key="name">
+              <option :value="name" x-text="name"></option>
+            </template>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Date</label>
+          <div class="flex items-center gap-1">
+            <button @click="shiftDate(-1)" class="px-2.5 py-2 border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">‹</button>
+            <input type="date" x-model="recDate" @change="loadActivity()"
+                   class="px-3 py-2 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200 font-mono">
+            <button @click="shiftDate(1)" class="px-2.5 py-2 border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">›</button>
+          </div>
+        </div>
+        <div class="flex gap-1.5">
+          <button @click="applyPreset('today')" class="px-3 py-2 text-xs font-semibold border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">Today</button>
+          <button @click="applyPreset('yesterday')" class="px-3 py-2 text-xs font-semibold border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">Yesterday</button>
+          <button @click="applyPreset('lasthour')" class="px-3 py-2 text-xs font-semibold border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">Last hour</button>
+        </div>
+        <button @click="loadActivity()" :disabled="recLoading"
+                class="px-4 py-2 text-xs font-semibold border border-white/[0.12] rounded-xl text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors disabled:opacity-50 ml-auto">
+          <span x-show="!recLoading">Refresh</span>
+          <span x-show="recLoading">Loading…</span>
+        </button>
+      </div>
+
+      <p class="section-sub" x-show="!recLoading && recBuckets.length && !recBuckets.some(b=>b.motion>0)">
+        No motion recorded for <span x-text="recCamera"></span> on <span x-text="recDate"></span>.
+      </p>
+      <p class="text-sm text-red-400 mb-3" x-show="recError" x-text="recError"></p>
+
+      <!-- Heatmap: 24 hour rows × 6 ten-minute cells -->
+      <div class="space-y-[3px]" x-show="recBuckets.length">
+        <template x-for="hour in 24" :key="hour">
+          <div class="flex items-center gap-2">
+            <span class="w-9 shrink-0 text-[10px] font-mono text-zinc-600 text-right" x-text="String(hour-1).padStart(2,'0')+':00'"></span>
+            <div class="flex gap-[3px] flex-1">
+              <template x-for="b in recBuckets.slice((hour-1)*6, hour*6)" :key="b.epoch">
+                <button @click="pickBucket(b)"
+                        class="h-5 flex-1 rounded-sm hover:ring-2 hover:ring-sky-400 transition-all"
+                        :style="bucketColor(b.motion)"
+                        :title="fmtTime(b.epoch)+' — '+Math.round(b.motion)+'% motion (click to select + preview this 10-min window)'">
+                </button>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="card p-5">
+      <p class="section-title">Preview & save clip</p>
+      <p class="section-sub">Click a cell above to prefill a 10-min window and preview it inline, or set a custom range. Direct file concat — no re-encode, works even under load. Max 4 hours.</p>
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">Start</label>
+          <input type="datetime-local" x-model="clipStart"
+                 class="px-3 py-2 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-1.5">End</label>
+          <input type="datetime-local" x-model="clipEnd"
+                 class="px-3 py-2 border border-white/[0.12] rounded-xl text-sm bg-[#09090b] text-zinc-200 font-mono">
+        </div>
+        <button @click="generateClip()" :disabled="clipGenerating || !clipStart || !clipEnd"
+                class="px-6 py-2.5 bg-sky-500 text-zinc-950 text-sm rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 font-semibold">
+          <span x-show="!clipGenerating">Preview / Save</span>
+          <span x-show="clipGenerating">Generating…</span>
+        </button>
+      </div>
+      <p class="text-sm text-red-400 mt-3" x-show="clipError" x-text="clipError"></p>
+      <div x-show="clipResult" class="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-xl">
+        <p class="text-sm font-medium text-emerald-300 mb-2">✓ Clip ready</p>
+        <video :src="clipResult?.url" controls class="w-full max-w-xl rounded-lg bg-black"></video>
+        <a :href="clipResult?.url" download class="inline-block mt-2 text-xs font-mono text-sky-400 hover:text-sky-300 break-all">⬇ Download <span x-text="clipResult?.url"></span></a>
+      </div>
+    </div>
+
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-4">
+        <p class="section-title mb-0">Saved clips</p>
+        <button @click="loadExports()" class="text-xs px-3 py-1.5 border border-white/[0.12] rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors">
+          Refresh
+        </button>
+      </div>
+      <p class="text-sm text-zinc-500" x-show="!exports.length">No clips generated yet.</p>
+      <div class="space-y-2">
+        <template x-for="e in exports" :key="e.name">
+          <div class="p-3 bg-[#0d1020] border border-white/[0.06] rounded-xl">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <button @click="e._open = !e._open" class="text-sm font-mono text-sky-400 hover:text-sky-300 break-all text-left" x-text="e.name"></button>
+                <p class="text-[11px] text-zinc-500 mt-0.5">
+                  <span x-text="fmtSize(e.size)"></span> · <span x-text="fmtTime(e.mtime)"></span>
+                </p>
+              </div>
+              <div class="shrink-0 flex items-center gap-1">
+                <a :href="'/clips/'+e.name" download class="text-xs px-2.5 py-1 text-sky-400/80 hover:text-sky-300 hover:bg-sky-500/10 rounded-lg transition-colors">⬇ Download</a>
+                <button @click="deleteExport(e.name)" class="text-xs px-2.5 py-1 text-red-400/80 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors">Delete</button>
+              </div>
+            </div>
+            <video x-show="e._open" x-cloak :src="'/clips/'+e.name" controls class="w-full max-w-xl rounded-lg bg-black mt-3"></video>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ LOGS ═══════════════════════════════════════════════════════════ -->
   <div x-show="activeTab==='logs'" x-cloak>
     <div class="card p-5">
@@ -627,13 +792,23 @@ function app() {
     activeTab: localStorage.getItem('ring-tab') || 'dashboard',
     tabs: [
       {id:'dashboard',   label:'Dashboard',   icon:'📊'},
+      {id:'recordings',  label:'Recordings',  icon:'🎬'},
       {id:'cameras',     label:'Cameras',     icon:'📷'},
       {id:'detection',   label:'Detection',   icon:'🔍'},
       {id:'retention',   label:'Retention',   icon:'🗂'},
       {id:'credentials', label:'Credentials', icon:'🔑'},
       {id:'logs',        label:'Logs',        icon:'📋'},
     ],
-    setTab(id) { this.activeTab=id; localStorage.setItem('ring-tab',id); },
+    setTab(id) {
+      this.activeTab=id; localStorage.setItem('ring-tab',id);
+      if (id==='recordings' && !this._recLoaded) { this._recLoaded=true; this.loadRecordingsTab(); }
+    },
+
+    recCamera: '', recDate: new Date().toISOString().slice(0,10),
+    recBuckets: [], recLoading: false, recError: '', recSummary: {},
+    clipStart: '', clipEnd: '', clipGenerating: false, clipResult: null, clipError: '',
+    exports: [], _recLoaded: false,
+    retentionEdit: {}, savingCameraRetention: null,
 
     services:     {{ statuses | tojson }},
     cameraStats:  {},
@@ -674,7 +849,132 @@ function app() {
       await this.refreshStatus();
       setInterval(() => this.refreshStatus(), 10000);
       if (this.activeTab === 'logs') this.fetchLogs();
+      if (this.activeTab === 'recordings') { this._recLoaded = true; this.loadRecordingsTab(); }
     },
+
+    async loadRecordingsTab() {
+      if (!this.recCamera) this.recCamera = Object.keys(this.allCameras)[0] || '';
+      await Promise.all([this.loadActivity(), this.loadExports(), this.loadSummary()]);
+    },
+
+    async loadRecordingsForCamera() {
+      this.clipResult = null; this.clipStart = ''; this.clipEnd = '';
+      await this.loadActivity();
+    },
+
+    async loadSummary() {
+      try {
+        const r = await fetch('/api/recordings/summary');
+        this.recSummary = await r.json();
+        for (const [name, s] of Object.entries(this.recSummary)) {
+          this.retentionEdit[name] = {continuous_days: s.continuous_days, motion_days: s.motion_days};
+        }
+      } catch {}
+    },
+
+    async saveCameraRetention(name) {
+      const edit = this.retentionEdit[name];
+      if (!edit) return;
+      this.savingCameraRetention = name;
+      try {
+        await fetch(`/api/camera/${encodeURIComponent(name)}/retention`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({continuous_days: edit.continuous_days, motion_days: edit.motion_days}),
+        });
+        await this.loadSummary();
+      } finally { this.savingCameraRetention = null; }
+    },
+
+    shiftDate(days) {
+      const d = new Date(this.recDate + 'T00:00:00');
+      d.setDate(d.getDate() + days);
+      this.recDate = d.toISOString().slice(0,10);
+      this.loadActivity();
+    },
+
+    applyPreset(name) {
+      const now = new Date();
+      if (name === 'today') { this.recDate = now.toISOString().slice(0,10); this.loadActivity(); return; }
+      if (name === 'yesterday') {
+        const d = new Date(now); d.setDate(d.getDate()-1);
+        this.recDate = d.toISOString().slice(0,10); this.loadActivity();
+        return;
+      }
+      if (name === 'lasthour') {
+        const start = new Date(now.getTime() - 3600*1000);
+        this.recDate = now.toISOString().slice(0,10);
+        this.clipStart = this.toLocalInput(start);
+        this.clipEnd   = this.toLocalInput(now);
+        this.loadActivity().then(() => this.generateClip());
+      }
+    },
+
+    async loadActivity() {
+      if (!this.recCamera || !this.recDate) return;
+      this.recLoading = true; this.recError = '';
+      try {
+        const dayStart = new Date(this.recDate + 'T00:00:00');
+        const after = Math.floor(dayStart.getTime()/1000);
+        const before = after + 86400;
+        const r = await fetch(`/api/recordings/activity?camera=${encodeURIComponent(this.recCamera)}&after=${after}&before=${before}&scale=600`);
+        const data = await r.json();
+        const map = {};
+        if (Array.isArray(data)) for (const d of data) { if (d.camera) map[Math.round(d.start_time/600)*600] = d.motion; }
+        const buckets = [];
+        for (let t = after; t < before; t += 600) buckets.push({epoch: t, motion: map[t] || 0});
+        this.recBuckets = buckets;
+      } catch { this.recError = 'Failed to load activity — is Frigate reachable?'; }
+      finally { this.recLoading = false; }
+    },
+
+    bucketColor(motion) {
+      if (motion <= 0) return 'background:#16192a';
+      const a = Math.min(1, 0.15 + (motion/100)*0.85);
+      return `background:rgba(56,189,248,${a.toFixed(2)})`;
+    },
+
+    _pad(n) { return String(n).padStart(2,'0'); },
+    toLocalInput(d) {
+      return `${d.getFullYear()}-${this._pad(d.getMonth()+1)}-${this._pad(d.getDate())}T${this._pad(d.getHours())}:${this._pad(d.getMinutes())}`;
+    },
+    pickBucket(b) {
+      this.clipStart = this.toLocalInput(new Date(b.epoch*1000));
+      this.clipEnd   = this.toLocalInput(new Date((b.epoch+600)*1000));
+      this.generateClip();
+    },
+
+    async generateClip() {
+      if (!this.clipStart || !this.clipEnd) return;
+      this.clipGenerating = true; this.clipError = ''; this.clipResult = null;
+      try {
+        const start = Math.floor(new Date(this.clipStart).getTime()/1000);
+        const end   = Math.floor(new Date(this.clipEnd).getTime()/1000);
+        const r = await fetch('/api/recordings/clip', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({camera: this.recCamera, start, end}),
+        });
+        const d = await r.json();
+        if (d.error) { this.clipError = d.error; return; }
+        this.clipResult = d;
+        await this.loadExports();
+      } catch { this.clipError = 'Request failed'; }
+      finally { this.clipGenerating = false; }
+    },
+
+    async loadExports() {
+      try {
+        const r = await fetch('/api/recordings/exports');
+        const list = (await r.json()).exports || [];
+        this.exports = list.map(e => ({...e, _open: false}));
+      } catch {}
+    },
+    async deleteExport(name) {
+      if (!confirm(`Delete ${name}?`)) return;
+      await fetch(`/api/recordings/exports/${encodeURIComponent(name)}`, {method:'DELETE'});
+      this.exports = this.exports.filter(e => e.name !== name);
+    },
+    fmtSize(bytes) { return bytes > 1e6 ? (bytes/1e6).toFixed(1)+' MB' : (bytes/1e3).toFixed(0)+' KB'; },
+    fmtTime(epoch) { return new Date(epoch*1000).toLocaleString(); },
 
     async refreshStatus() {
       try {

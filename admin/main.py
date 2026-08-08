@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import threading
@@ -15,6 +16,7 @@ import paho.mqtt.client as mqtt
 import yaml
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 app = FastAPI()
@@ -81,7 +83,14 @@ RING_STATE_PATH     = Path("/ring-mqtt-data/ring-state.json")
 GO2RTC_PATH         = Path("/ring-mqtt-data/go2rtc.yaml")
 FRIGATE_CONFIG_PATH = Path("/frigate-config/config.yaml")
 CAMERA_META_PATH    = Path("/frigate-config/camera_meta.json")
+FRIGATE_DB_PATH         = Path("/frigate-config/frigate.db")
+FRIGATE_CLIPS_PATH      = Path("/media/frigate/clips")
+FRIGATE_RECORDINGS_PATH = Path("/media/frigate/recordings")
+FRIGATE_EXPORTS_PATH    = Path("/media/frigate/exports")
 FRIGATE_API         = "http://ring-frigate:5000"
+
+FRIGATE_EXPORTS_PATH.mkdir(parents=True, exist_ok=True)
+app.mount("/clips", StaticFiles(directory=str(FRIGATE_EXPORTS_PATH)), name="clips")
 
 SERVICES = {
     "mosquitto": "ring-rtsp-mosquitto",
@@ -669,8 +678,6 @@ async def api_save_credentials(request: Request):
 
 # ── API: storage cleanup ─────────────────────────────────────────────────────
 
-FRIGATE_DB_PATH = Path("/config/frigate.db")
-FRIGATE_CLIPS_PATH = Path("/media/frigate/clips")
 
 @app.get("/api/cleanup/preview")
 async def api_cleanup_preview():
@@ -739,6 +746,193 @@ async def api_cleanup_orphaned(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# ── API: recordings viewer ───────────────────────────────────────────────────
+# Frigate's own on-the-fly clip API (/api/<camera>/start/.../end/.../clip.mp4)
+# re-muxes segments live on request and gets very slow under load (observed
+# minutes-long stalls). We build clips ourselves instead: look up segment
+# paths directly from Frigate's recordings table and concat with `-c copy`
+# (no re-encode), which is fast regardless of system load.
+
+@app.get("/api/recordings/summary")
+async def api_recordings_summary():
+    """Per-camera recording behavior: mode, retention, storage actually used.
+
+    Answers "what are we even saving" — battery cameras only record on a Ring
+    motion/ding event; wired cameras record continuously by default. Retention
+    defaults to the global policy (see /api/retention) unless a camera has its
+    own override (see /api/camera/{camera}/retention).
+    """
+    import sqlite3
+    fcfg = read_frigate_config()
+    record_cfg = fcfg.get("record", {})
+    global_continuous_days = (record_cfg.get("continuous") or {}).get("days", 0)
+    global_motion_days = (record_cfg.get("motion") or {}).get("days", 7)
+
+    stats_by_cam = {}
+    try:
+        conn = sqlite3.connect(str(FRIGATE_DB_PATH))
+        c = conn.cursor()
+        c.execute(
+            "SELECT camera, COUNT(*), SUM(segment_size), MIN(start_time), MAX(start_time) "
+            "FROM recordings GROUP BY camera"
+        )
+        for cam, count, size_mb, earliest, latest in c.fetchall():
+            stats_by_cam[cam] = {
+                "segment_count": count,
+                "size_bytes": int((size_mb or 0) * 1024 * 1024),
+                "earliest": earliest,
+                "latest": latest,
+            }
+        conn.close()
+    except Exception as e:
+        logger.warning("recordings summary: db query failed: %s", e)
+
+    cameras = all_known_cameras()
+    result = {}
+    for name, meta in cameras.items():
+        stats = stats_by_cam.get(name, {"segment_count": 0, "size_bytes": 0, "earliest": None, "latest": None})
+        cam_record = (meta.get("config") or {}).get("record") or {}
+        has_override = bool(cam_record)
+        result[name] = {
+            "battery": meta["battery"],
+            "mode": "motion-triggered" if meta["battery"] else "continuous",
+            "continuous_days": (cam_record.get("continuous") or {}).get("days", global_continuous_days),
+            "motion_days": (cam_record.get("motion") or {}).get("days", global_motion_days),
+            "has_override": has_override,
+            **stats,
+        }
+    return result
+
+
+@app.post("/api/camera/{camera}/retention")
+async def api_camera_retention(camera: str, request: Request):
+    """Set a per-camera retention override, or clear it to inherit the global policy."""
+    data = await request.json()
+    continuous_days = int(data.get("continuous_days", 0))
+    motion_days = max(1, int(data.get("motion_days", 7)))
+
+    fcfg = read_frigate_config()
+    cameras = fcfg.get("cameras", {})
+    if camera not in cameras:
+        return JSONResponse({"error": "camera not found"}, status_code=404)
+
+    global_record = fcfg.get("record", {})
+    global_continuous_days = (global_record.get("continuous") or {}).get("days", 0)
+    global_motion_days = (global_record.get("motion") or {}).get("days", 7)
+
+    if continuous_days == global_continuous_days and motion_days == global_motion_days:
+        cameras[camera].pop("record", None)  # inherit global policy
+    else:
+        override = {"motion": {"days": motion_days}}
+        if continuous_days > 0:
+            override["continuous"] = {"days": continuous_days}
+        cameras[camera]["record"] = override
+
+    meta = read_camera_meta()
+    if camera in meta:
+        cam_cfg = meta[camera].setdefault("config", {})
+        if "record" in cameras[camera]:
+            cam_cfg["record"] = cameras[camera]["record"]
+        else:
+            cam_cfg.pop("record", None)
+        write_camera_meta(meta)
+
+    write_frigate_config(fcfg)
+    restart_container("frigate")
+    return {"ok": True}
+
+
+@app.get("/api/recordings/activity")
+async def api_recordings_activity(camera: str, after: int, before: int, scale: int = 600):
+    """Proxy Frigate's per-bucket motion activity — used to render the heatmap."""
+    try:
+        r = httpx.get(
+            f"{FRIGATE_API}/api/review/activity/motion",
+            params={"cameras": camera, "after": after, "before": before, "scale": scale},
+            timeout=10,
+        )
+        return JSONResponse(content=r.json(), status_code=r.status_code)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/api/recordings/exports")
+async def api_recordings_exports():
+    """List previously generated clips, newest first."""
+    items = []
+    for f in FRIGATE_EXPORTS_PATH.glob("*.mp4"):
+        st = f.stat()
+        items.append({"name": f.name, "size": st.st_size, "mtime": st.st_mtime})
+    items.sort(key=lambda i: -i["mtime"])
+    return {"exports": items}
+
+
+@app.delete("/api/recordings/exports/{name}")
+async def api_recordings_delete_export(name: str):
+    if not re.match(r'^[A-Za-z0-9_.-]+\.mp4$', name):
+        return JSONResponse({"error": "invalid filename"}, status_code=400)
+    (FRIGATE_EXPORTS_PATH / name).unlink(missing_ok=True)
+    return {"ok": True}
+
+
+@app.post("/api/recordings/clip")
+async def api_recordings_clip(request: Request):
+    import subprocess
+    import sqlite3
+
+    data   = await request.json()
+    camera = str(data.get("camera", ""))
+    start  = int(data.get("start", 0))
+    end    = int(data.get("end", 0))
+
+    if camera not in all_known_cameras():
+        return JSONResponse({"error": "unknown camera"}, status_code=400)
+    if end <= start:
+        return JSONResponse({"error": "end must be after start"}, status_code=400)
+    if end - start > 4 * 3600:
+        return JSONResponse({"error": "max clip length is 4 hours"}, status_code=400)
+
+    try:
+        conn = sqlite3.connect(str(FRIGATE_DB_PATH))
+        c = conn.cursor()
+        c.execute(
+            "SELECT path FROM recordings WHERE camera=? AND start_time<? AND end_time>? "
+            "ORDER BY start_time ASC",
+            (camera, end, start),
+        )
+        paths = [row[0] for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        return JSONResponse({"error": f"db error: {e}"}, status_code=500)
+
+    paths = [p for p in paths if Path(p).exists()]
+    if not paths:
+        return JSONResponse({"error": "no recordings found in that range"}, status_code=404)
+
+    import datetime
+    s = datetime.datetime.fromtimestamp(start, datetime.UTC)
+    e = datetime.datetime.fromtimestamp(end, datetime.UTC)
+    out_name = f"{camera}_{s.strftime('%Y-%m-%d_%H%M')}-{e.strftime('%H%M')}_UTC.mp4"
+    out_path = FRIGATE_EXPORTS_PATH / out_name
+    list_path = FRIGATE_EXPORTS_PATH / f".{camera}_{start}_{end}.filelist.txt"
+    list_path.write_text("".join(f"file '{p}'\n" for p in paths))
+
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+             "-c", "copy", str(out_path)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            return JSONResponse({"error": f"ffmpeg failed: {result.stderr[-500:]}"}, status_code=500)
+    except subprocess.TimeoutExpired:
+        return JSONResponse({"error": "clip generation timed out"}, status_code=504)
+    finally:
+        list_path.unlink(missing_ok=True)
+
+    return {"ok": True, "url": f"/clips/{out_name}", "segments": len(paths)}
+
+
 # ── MQTT listener ─────────────────────────────────────────────────────────────
 # Battery cameras stay IN Frigate config permanently (removing them causes
 # Frigate to delete their recordings). We toggle camera-level `enabled` flag:
@@ -758,6 +952,21 @@ RING_TOPIC = "ring"
 
 _motion_timers: dict[str, threading.Timer] = {}
 _timer_lock = threading.Lock()
+
+# ── push-channel watchdog ────────────────────────────────────────────────────
+# ring-mqtt occasionally loses its push connection to Ring cloud silently — no
+# error, warning, or reconnect is ever logged. REST polling (info/state) and
+# token refresh keep working and the container stays "healthy", but motion/ding
+# events stop arriving entirely and nothing gets recorded. There is no direct
+# signal to detect this, so we defend in two layers:
+#   1. Unconditional scheduled restart every SCHEDULED_RESTART_HOURS — bounds
+#      the worst-case outage regardless of whether this happens again.
+#   2. A silence watchdog with a much longer threshold as a backup, in case
+#      the push channel dies again shortly after a scheduled restart.
+SCHEDULED_RESTART_HOURS = float(os.environ.get("SCHEDULED_RESTART_HOURS", "24"))
+MOTION_WATCHDOG_HOURS    = float(os.environ.get("MOTION_WATCHDOG_HOURS", "48"))
+_last_motion_seen = _time.time()
+_watchdog_lock = threading.Lock()
 
 
 def _camera_name_for_id(camera_id: str) -> str | None:
@@ -838,6 +1047,11 @@ def _on_mqtt_message(client, userdata, msg):
         cam_name   = _camera_name_for_id(camera_id)
         if not cam_name:
             return
+
+        global _last_motion_seen
+        with _watchdog_lock:
+            _last_motion_seen = _time.time()
+
         meta     = read_camera_meta()
         cam_meta = meta.get(cam_name, {})
         record_seconds = cam_meta.get("record_seconds", 120)
@@ -927,6 +1141,112 @@ def _start_mqtt_listener():
             time.sleep(10)
 
 
-# Start MQTT listener in background thread at startup
+def _start_motion_watchdog():
+    """Restart ring-mqtt if no motion/ding event has arrived in MOTION_WATCHDOG_HOURS.
+
+    ring-mqtt can silently lose its push connection to Ring cloud while REST
+    polling keeps the container "healthy" — this catches that case without
+    needing anyone to notice missing recordings first.
+    """
+    global _last_motion_seen
+    check_interval = min(1800, MOTION_WATCHDOG_HOURS * 3600 / 4)
+    while True:
+        time.sleep(check_interval)
+        with _watchdog_lock:
+            silence = _time.time() - _last_motion_seen
+        if silence <= MOTION_WATCHDOG_HOURS * 3600:
+            continue
+        status = container_status(SERVICES["ring-mqtt"])
+        if status["status"] != "running":
+            continue
+        logger.warning(
+            "No motion/ding event for %.1fh (limit %.1fh) — restarting ring-mqtt",
+            silence / 3600, MOTION_WATCHDOG_HOURS,
+        )
+        try:
+            restart_container("ring-mqtt")
+        except Exception as e:
+            logger.warning("Watchdog restart of ring-mqtt failed: %s", e)
+        # Give it a fresh window regardless of outcome — avoids restart-looping
+        # every check_interval if Ring cloud itself is down.
+        with _watchdog_lock:
+            _last_motion_seen = _time.time()
+
+
+def _start_scheduled_restart():
+    """Unconditionally restart ring-mqtt every SCHEDULED_RESTART_HOURS.
+
+    This is the primary defense (vendor-documented recovery for silent push
+    failures — see wiki: re-authenticating re-registers the FCM push-receiver).
+    Runs regardless of activity so a repeat of the 18-day outage is bounded no
+    matter what, without guessing whether "quiet" means "broken".
+    """
+    global _last_motion_seen
+    while True:
+        time.sleep(SCHEDULED_RESTART_HOURS * 3600)
+        status = container_status(SERVICES["ring-mqtt"])
+        if status["status"] != "running":
+            continue
+        logger.info("Scheduled restart of ring-mqtt (every %.1fh)", SCHEDULED_RESTART_HOURS)
+        try:
+            restart_container("ring-mqtt")
+        except Exception as e:
+            logger.warning("Scheduled restart of ring-mqtt failed: %s", e)
+        with _watchdog_lock:
+            _last_motion_seen = _time.time()
+
+
+# ── Frigate detector watchdog ────────────────────────────────────────────────
+# The object detector subprocess can silently wedge (still running, near-zero
+# CPU, no errors logged) while ffmpeg keeps feeding it frames — process_fps
+# stays normal but detection_fps sticks at 0 and inference_speed reports a
+# garbage value. Unlike the ring-mqtt case, this has a real signal: frames
+# actively flowing (process_fps > 0) with zero completed detections is
+# unambiguous, not "camera is just quiet" — so no scheduled-restart fallback
+# needed here, just act on the signal directly.
+FRIGATE_DETECTOR_STALL_MINUTES = float(os.environ.get("FRIGATE_DETECTOR_STALL_MINUTES", "30"))
+_detector_stall_since: float | None = None
+
+def _start_frigate_detector_watchdog():
+    check_interval = min(300, FRIGATE_DETECTOR_STALL_MINUTES * 60 / 3)
+    global _detector_stall_since
+    while True:
+        time.sleep(check_interval)
+        stats = frigate_stats()
+        cameras = stats.get("cameras", {})
+        active = [c for c in cameras.values() if c.get("process_fps", 0) > 0.5]
+        if not active:
+            _detector_stall_since = None
+            continue
+        stalled = all(c.get("detection_fps", 0) == 0 for c in active)
+        if not stalled:
+            _detector_stall_since = None
+            continue
+        if _detector_stall_since is None:
+            _detector_stall_since = _time.time()
+            continue
+        if _time.time() - _detector_stall_since < FRIGATE_DETECTOR_STALL_MINUTES * 60:
+            continue
+        status = container_status(SERVICES["frigate"])
+        if status["status"] != "running":
+            continue
+        logger.warning(
+            "Frigate detector stalled for %.0fm (frames flowing, zero detections) — restarting frigate",
+            (_time.time() - _detector_stall_since) / 60,
+        )
+        try:
+            restart_container("frigate")
+        except Exception as e:
+            logger.warning("Watchdog restart of frigate failed: %s", e)
+        _detector_stall_since = None
+
+
+# Start MQTT listener + push-channel defenses in background threads at startup
 _mqtt_thread = threading.Thread(target=_start_mqtt_listener, daemon=True)
 _mqtt_thread.start()
+_watchdog_thread = threading.Thread(target=_start_motion_watchdog, daemon=True)
+_watchdog_thread.start()
+_restart_thread = threading.Thread(target=_start_scheduled_restart, daemon=True)
+_restart_thread.start()
+_detector_watchdog_thread = threading.Thread(target=_start_frigate_detector_watchdog, daemon=True)
+_detector_watchdog_thread.start()
