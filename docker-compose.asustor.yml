@@ -8,17 +8,32 @@
 #   satisfies admin's depends_on without actually proxying anything.
 #   Admin falls back to the Docker socket directly via volume mount.
 #   Acceptable because port 8085 is LAN-only and admin runs as non-root (uid 1001).
+#
+# Restart policy:
+#   ASUSTOR stops containers explicitly (docker stop) on shutdown/reboot, and
+#   `unless-stopped` containers are then NOT started again after boot. Use
+#   `always` for every service so the stack comes back after a reboot.
 
 services:
   docker-proxy:
     image: busybox:latest
     container_name: ring-docker-proxy
     command: sleep infinity
-    restart: unless-stopped
+    restart: always
     networks:
       - proxy-net
 
+  mosquitto:
+    restart: always
+
+  ring-mqtt:
+    restart: always
+
+  frigate:
+    restart: always
+
   admin:
+    restart: always
     environment:
       DOCKER_HOST: ""   # unset → falls back to unix:///var/run/docker.sock
     volumes:
